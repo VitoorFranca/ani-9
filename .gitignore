@@ -3,6 +3,7 @@ dist/
 *.log
 .DS_Store
 /cache/
+/.cache/
 /report.md
 /report.json
 /data/*.apkg
