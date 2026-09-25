@@ -18,10 +18,14 @@
       {
         "name": "extração aberta por LLM (Anthropic Haiku) + canonicalização por embedding",
         "outcome": "abandonada",
+        "fixedAlongTheWay": [
+          "rótulos compostos (gramática+vocabulário fundidos) — corrigido com divisão atômica determinística",
+          "colapso de canonicalização por limiar fixo de similaridade — corrigido trocando o limiar por verificação de pares/grupos via LLM",
+          "confusão entre conteúdo estudado (inglês) e idioma da tradução de apoio (português) — corrigido na última rodada, separando PERGUNTA/RESPOSTA no prompt"
+        ],
         "reasons": [
-          "rótulos compostos (gramática+vocabulário fundidos)",
-          "colapso de canonicalização por limiar fixo de similaridade (não separa sinônimos verdadeiros de pares não relacionados)",
-          "mesmo com verificação de grupo e divisão determinística de rótulos, persistiu confusão entre conteúdo estudado (inglês) e idioma da tradução de apoio (português)"
+          "erros de gramática que persistiam nos rótulos gerados",
+          "custo de chamadas repetidas à API da Anthropic"
         ]
       },
       {

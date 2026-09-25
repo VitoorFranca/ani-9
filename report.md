@@ -12,7 +12,7 @@
 
 Três abordagens foram tentadas para a camada de conceitos:
 
-1. **Extração aberta por LLM (Anthropic Haiku) + canonicalização por embedding.** Abandonada: rótulos compostos, colapso da canonicalização por limiar fixo, e persistência do erro de nomear a gramática da tradução em vez do conteúdo estudado.
+1. **Extração aberta por LLM (Anthropic Haiku) + canonicalização por embedding.** Passou por várias correções reais no caminho — rótulos compostos (corrigido com divisão atômica), colapso da canonicalização por limiar fixo (corrigido com verificação por LLM em vez de limiar), e nomeação da gramática da tradução em vez do conteúdo estudado (corrigido na última rodada, com PERGUNTA/RESPOSTA separados no prompt). Abandonada mesmo assim, por erros de gramática que persistiam nos rótulos e pelo custo de usar a API da Anthropic repetidamente.
 2. **Modelo de vizinhos por similaridade local** (embeddings + BM25, sem LLM). Corrigido um bug real de escala de peso, mas nenhuma variante superou o FSRS com significância — descartado.
 3. **Lista fixa de conceitos (Gemini 3.1 Flash-Lite) + vocabulário por regra.** Resolveu o problema de canonicalização por construção (lista fixa revisada por humano, LLM só classifica em conjunto fechado). Pareceu funcionar inicialmente — mas a ablação abaixo mostra que não funcionava pelo motivo certo.
 
