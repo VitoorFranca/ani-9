@@ -55,6 +55,8 @@ export function selectFixedListSample(
 export interface FixedListConcept {
   name: string;
   description: string;
+  /** Card IDs from the sample that require this concept (at least 2). */
+  examples: number[];
 }
 
 function buildFixedListPrompt(cards: readonly SampleCard[]): string {
@@ -75,9 +77,14 @@ Cada conceito deve ser ATÔMICO: uma única ideia por conceito, sem exemplos ent
   ERRADO: "past simple (called off)" (mistura a regra gramatical com uma expressão específica)
   CERTO: "past simple" como um conceito, e "phrasal verb: called off" como outro conceito separado (se a expressão em si for relevante o bastante para aparecer em múltiplos cartões).
 
-A lista deve ser ENXUTA e REUTILIZÁVEL: cada conceito deve ser algo que plausivelmente aparece em VÁRIOS cartões diferentes deste baralho, não algo específico de um único cartão desta amostra.
+Critério de granularidade — use-o para decidir quando DIVIDIR uma categoria ampla: dois conceitos são DIFERENTES se uma pessoa pode saber um sem saber o outro. Categorias amplas como "Phrasal Verbs" ou "Expressões Idiomáticas" quase sempre precisam ser divididas nos padrões específicos que os cartões realmente exigem (ex.: em vez de "Phrasal Verbs", use conceitos como "phrasal verb: called off", "phrasal verb: give up", cada um só se aparecer em múltiplos cartões).
 
-Nomeie os conceitos em português. Para cada um, dê um nome curto e uma descrição de uma frase explicando o que ele cobre.
+Requisitos da lista final:
+- Entre 30 e 80 conceitos.
+- Cada conceito deve aparecer em PELO MENOS 3 cartões desta amostra — se você só encontrar 1 ou 2 exemplos, ou é específico demais (não deveria estar na lista) ou você precisa generalizar um pouco o conceito até achar um terceiro exemplo real na amostra.
+- Para cada conceito, cite os IDs de 2 cartões desta amostra que o exigem (campo "examples"), como prova de que ele realmente aparece repetidamente.
+
+Nomeie os conceitos em português. Para cada um, dê um nome curto, uma descrição de uma frase, e os 2 IDs de exemplo.
 
 Cartões:
 ${cardLines}`;
@@ -94,8 +101,9 @@ function buildFixedListSchema(): unknown {
           properties: {
             name: { type: "string" },
             description: { type: "string" },
+            examples: { type: "array", items: { type: "integer" } },
           },
-          required: ["name", "description"],
+          required: ["name", "description", "examples"],
         },
       },
     },
@@ -103,7 +111,7 @@ function buildFixedListSchema(): unknown {
   };
 }
 
-function validateFixedListResult(input: unknown): FixedListConcept[] {
+function validateFixedListResult(input: unknown, validCardIds: ReadonlySet<number>): FixedListConcept[] {
   if (typeof input !== "object" || input === null || !("concepts" in input)) {
     throw new Error("Invalid fixed-list result: missing 'concepts'");
   }
@@ -112,9 +120,17 @@ function validateFixedListResult(input: unknown): FixedListConcept[] {
 
   for (const concept of concepts) {
     if (typeof concept !== "object" || concept === null) throw new Error("Invalid concept entry");
-    const c = concept as { name?: unknown; description?: unknown };
+    const c = concept as { name?: unknown; description?: unknown; examples?: unknown };
     if (typeof c.name !== "string" || c.name.trim() === "") throw new Error("Invalid concept name");
     if (typeof c.description !== "string") throw new Error("Invalid concept description");
+    if (!Array.isArray(c.examples) || c.examples.length < 2) {
+      throw new Error(`Concept "${c.name}" must cite at least 2 example card ids`);
+    }
+    for (const id of c.examples) {
+      if (typeof id !== "number" || !validCardIds.has(id)) {
+        throw new Error(`Concept "${c.name}" cites an example card id not in the sample: ${id}`);
+      }
+    }
   }
 
   return concepts as FixedListConcept[];
@@ -138,7 +154,8 @@ export async function generateFixedList(
   const result = await generateJson(options.client, model, buildFixedListPrompt(sample), buildFixedListSchema());
 
   if (!result.text) throw new Error("Empty response from Gemini");
-  const concepts = validateFixedListResult(JSON.parse(result.text));
+  const validCardIds = new Set(sample.map((c) => c.cardId));
+  const concepts = validateFixedListResult(JSON.parse(result.text), validCardIds);
 
   return { concepts, usage: result.usage };
 }
