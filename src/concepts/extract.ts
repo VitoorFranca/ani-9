@@ -1,34 +1,17 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { ConceptCache, hashCardContent } from "./cache.js";
+import { runLlmBatchWithSplitting } from "./llm-batch.js";
+import type { MinimalAnthropicClient } from "./anthropic-client.js";
 import type { ExtractedConcept } from "./types.js";
 
+export type { MinimalAnthropicClient } from "./anthropic-client.js";
+
 export const DEFAULT_MODEL = "claude-haiku-4-5";
+const MAX_CONCEPTS_PER_CARD = 6;
 
 export interface ExtractableCard {
   cardId: number;
   text: string;
-}
-
-/**
- * Only the shape extract.ts actually needs from an Anthropic client — a
- * real `Anthropic` instance satisfies this structurally, but tests can pass
- * a lightweight mock instead of hitting the network/spending money.
- */
-export interface MinimalAnthropicClient {
-  messages: {
-    create(params: {
-      model: string;
-      max_tokens: number;
-      tools: Anthropic.Tool[];
-      tool_choice: Anthropic.ToolChoiceTool;
-      messages: { role: "user"; content: string }[];
-    }): Promise<Anthropic.Message>;
-  };
-}
-
-interface ExtractionUsage {
-  inputTokens: number;
-  outputTokens: number;
 }
 
 interface RawExtractionResult {
@@ -51,6 +34,9 @@ function validateExtractionResult(input: unknown): RawExtractionResult {
     const c = card as { card_id?: unknown; concepts?: unknown };
     if (typeof c.card_id !== "number") throw new Error("Invalid or missing card_id");
     if (!Array.isArray(c.concepts)) throw new Error("Invalid or missing concepts array");
+    if (c.concepts.length > MAX_CONCEPTS_PER_CARD) {
+      throw new Error(`Card ${c.card_id} returned more than ${MAX_CONCEPTS_PER_CARD} concepts`);
+    }
     for (const concept of c.concepts) {
       if (typeof concept !== "object" || concept === null) throw new Error("Invalid concept entry");
       const co = concept as { name?: unknown; weight?: unknown };
@@ -73,7 +59,7 @@ Aim for a level of granularity useful for diagnosing WHY a specific card might b
 Rules:
 - If a concept you're about to name is a close match for one already used in this deck (listed below), reuse that EXACT name instead of creating a near-duplicate.
 - "weight" is a number in (0, 1]: how central this concept is to answering the card correctly. 1.0 = the entire card hinges on it; lower values are supporting/secondary concepts.
-- Return between 1 and 6 concepts per card (typically 2-4).
+- Return between 1 and ${MAX_CONCEPTS_PER_CARD} concepts per card (typically 2-4). Never exceed ${MAX_CONCEPTS_PER_CARD}.
 - Name concepts in the same language as the card's own content, not translated into English.
 
 Concepts already used in this deck (reuse when applicable):
@@ -98,6 +84,8 @@ function buildExtractionTool(): Anthropic.Tool {
               card_id: { type: "integer" },
               concepts: {
                 type: "array",
+                minItems: 1,
+                maxItems: MAX_CONCEPTS_PER_CARD,
                 items: {
                   type: "object",
                   properties: {
@@ -117,63 +105,18 @@ function buildExtractionTool(): Anthropic.Tool {
   };
 }
 
-async function extractBatch(
-  client: MinimalAnthropicClient,
-  model: string,
-  cards: readonly ExtractableCard[],
-  knownConcepts: readonly string[],
-  onUsage: (usage: ExtractionUsage) => void,
-): Promise<Map<number, ExtractedConcept[]>> {
-  const message = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    tools: [buildExtractionTool()],
-    tool_choice: { type: "tool", name: "extract_concepts" },
-    messages: [{ role: "user", content: buildExtractionPrompt(cards, knownConcepts) }],
-  });
-
-  onUsage({ inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
-
-  const toolUse = message.content.find(
-    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
-  );
-  if (!toolUse) throw new Error("Model response did not include a tool_use block");
-
-  const parsed = validateExtractionResult(toolUse.input);
-  const results = new Map<number, ExtractedConcept[]>();
-  for (const card of parsed.cards) {
-    results.set(
-      card.card_id,
-      card.concepts.map((c) => ({ name: c.name.trim(), weight: clampWeight(c.weight) })),
-    );
-  }
-  return results;
-}
-
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  opts: { retries: number; baseDelayMs: number; sleep: (ms: number) => Promise<void>; onAttempt?: () => void },
-): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= opts.retries; attempt++) {
-    opts.onAttempt?.();
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      if (attempt < opts.retries) {
-        await opts.sleep(opts.baseDelayMs * 2 ** attempt);
-      }
-    }
-  }
-  throw lastError;
-}
-
 export interface ExtractConceptsOptions {
   client: MinimalAnthropicClient;
   model?: string;
   cacheDir?: string;
-  /** Cards per LLM call; spec calls for 20-50. */
+  /**
+   * Cards per LLM call. The spec calls for 20-50, but real cards + up to 6
+   * concepts each can push output past max_tokens at that size (confirmed:
+   * a real run at batchSize=40/max_tokens=4096 truncated half its batches).
+   * 15 leaves comfortable headroom under max_tokens=8192; the recursive
+   * split-on-truncation below is a safety net on top of that, not a
+   * substitute for it.
+   */
   batchSize?: number;
   maxRetriesPerBatch?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -202,17 +145,14 @@ export interface ExtractConceptsResult {
 /**
  * Extracts concepts for each card via the Anthropic API, in batches, reusing
  * previously-seen concept names across batches and caching by
- * hash(model, card text) so unchanged cards are never re-sent. A batch that
- * fails validation is retried with backoff; one that still fails after
- * retries is recorded in `stats.failedBatches` and its cards get no
- * concepts, without aborting the rest of the pipeline.
+ * hash(model, card text) so unchanged cards are never re-sent.
  */
 export async function extractConcepts(
   cards: readonly ExtractableCard[],
   options: ExtractConceptsOptions,
 ): Promise<ExtractConceptsResult> {
   const model = options.model ?? DEFAULT_MODEL;
-  const batchSize = options.batchSize ?? 40;
+  const batchSize = options.batchSize ?? 15;
   const maxRetriesPerBatch = options.maxRetriesPerBatch ?? 2;
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const cache = new ConceptCache(options.cacheDir ?? "./cache/concepts");
@@ -245,28 +185,45 @@ export async function extractConcepts(
   for (let i = 0; i < pending.length; i += batchSize) {
     const batch = pending.slice(i, i + batchSize);
     stats.batches++;
+    const knownAtBatchStart = [...knownConcepts];
 
-    try {
-      const results = await withRetry(
-        () => extractBatch(options.client, model, batch, [...knownConcepts], (usage) => {
-          stats.inputTokens += usage.inputTokens;
-          stats.outputTokens += usage.outputTokens;
-        }),
-        { retries: maxRetriesPerBatch, baseDelayMs: 1000, sleep, onAttempt: () => stats.calls++ },
-      );
+    const { results, failed } = await runLlmBatchWithSplitting(batch, {
+      client: options.client,
+      model,
+      maxOutputTokens: 8192,
+      maxRetries: maxRetriesPerBatch,
+      sleep,
+      onUsage: (usage) => {
+        stats.inputTokens += usage.inputTokens;
+        stats.outputTokens += usage.outputTokens;
+      },
+      onAttempt: () => stats.calls++,
+      toolName: "extract_concepts",
+      itemId: (card) => card.cardId,
+      buildTool: buildExtractionTool,
+      buildPrompt: (items) => buildExtractionPrompt(items, knownAtBatchStart),
+      parse: (input) => {
+        const parsed = validateExtractionResult(input);
+        const results = new Map<number, ExtractedConcept[]>();
+        for (const card of parsed.cards) {
+          results.set(
+            card.card_id,
+            card.concepts.map((c) => ({ name: c.name.trim(), weight: clampWeight(c.weight) })),
+          );
+        }
+        return results;
+      },
+    });
 
-      for (const card of batch) {
-        const concepts = results.get(card.cardId) ?? [];
-        conceptsByCard.set(card.cardId, concepts);
+    stats.failedBatches.push(...failed.map((f) => ({ cardIds: f.ids, error: f.error })));
+
+    for (const card of batch) {
+      const concepts = results.get(card.cardId) ?? [];
+      conceptsByCard.set(card.cardId, concepts);
+      if (results.has(card.cardId)) {
         await cache.set(card.hash, concepts);
         for (const c of concepts) knownConcepts.add(c.name);
       }
-    } catch (error) {
-      stats.failedBatches.push({
-        cardIds: batch.map((c) => c.cardId),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      for (const card of batch) conceptsByCard.set(card.cardId, []);
     }
   }
 

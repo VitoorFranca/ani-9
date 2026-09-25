@@ -165,4 +165,52 @@ describe("extractConcepts", () => {
     const secondCallPrompt = create.mock.calls[1]![0].messages[0].content as string;
     expect(secondCallPrompt).toContain("car");
   });
+
+  it("rejects a card with more than 6 concepts as invalid, triggering a retry", async () => {
+    const tooMany = toolUseMessage([
+      {
+        card_id: 1,
+        concepts: Array.from({ length: 7 }, (_, i) => ({ name: `concept-${i}`, weight: 0.5 })),
+      },
+    ]);
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(tooMany)
+      .mockResolvedValueOnce(toolUseMessage([{ card_id: 1, concepts: [{ name: "ok", weight: 0.5 }] }]));
+    const client: MinimalAnthropicClient = { messages: { create } };
+
+    const { conceptsByCard } = await extractConcepts(
+      [{ cardId: 1, text: "some card" }],
+      { client, cacheDir, sleep: noSleep },
+    );
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(conceptsByCard.get(1)).toEqual([{ name: "ok", weight: 0.5 }]);
+  });
+
+  it("splits a batch on stop_reason=max_tokens and still extracts both cards", async () => {
+    const create = vi.fn().mockImplementation(async (params: { messages: { content: string }[] }) => {
+      const prompt = params.messages[0]!.content;
+      if (prompt.includes("Card 1:") && prompt.includes("Card 2:")) {
+        return { ...toolUseMessage([]), stop_reason: "max_tokens" } as Anthropic.Message;
+      }
+      if (prompt.includes("Card 1:")) {
+        return toolUseMessage([{ card_id: 1, concepts: [{ name: "a", weight: 1 }] }]);
+      }
+      return toolUseMessage([{ card_id: 2, concepts: [{ name: "b", weight: 1 }] }]);
+    });
+    const client: MinimalAnthropicClient = { messages: { create } };
+
+    const { conceptsByCard, stats } = await extractConcepts(
+      [
+        { cardId: 1, text: "one" },
+        { cardId: 2, text: "two" },
+      ],
+      { client, cacheDir, sleep: noSleep },
+    );
+
+    expect(conceptsByCard.get(1)).toEqual([{ name: "a", weight: 1 }]);
+    expect(conceptsByCard.get(2)).toEqual([{ name: "b", weight: 1 }]);
+    expect(stats.failedBatches).toEqual([]);
+  });
 });
