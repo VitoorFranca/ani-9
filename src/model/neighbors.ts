@@ -3,7 +3,20 @@ import { buildBm25Index, tokenize } from "./bm25.js";
 
 export interface Neighbor {
   cardId: number;
-  /** Similarity, normalized to [0,1] per source card (min-max over its own row). */
+  /**
+   * Similarity on an absolute, corpus-wide [0,1] scale — NOT normalized
+   * per-row. Per-row min-max normalization was tried first and abandoned:
+   * it forces every card's single best match to weight 1.0 regardless of
+   * whether the true similarity is 0.99 or 0.3, which (confirmed against
+   * real data) makes even a card with no genuinely related neighbor inject
+   * full-strength transfer — the likely cause of a severe calibration
+   * collapse (RMSE 0.037 -> ~0.21) when this was fed into the Bayesian
+   * model. Embedding similarity is raw cosine, clipped to [0,1] (negative
+   * similarity contributes nothing). BM25 has no natural upper bound, so
+   * it's min-max normalized using the GLOBAL min/max over the whole matrix
+   * (not per row), which preserves "this card has no good match at all"
+   * as a real, low, comparable-across-cards signal instead of erasing it.
+   */
   weight: number;
 }
 
@@ -11,19 +24,30 @@ export type NeighborMethod = "embedding" | "bm25" | "average";
 
 export type NeighborSets = Record<NeighborMethod, Map<number, Neighbor[]>>;
 
-function normalizeRow(row: readonly number[]): number[] {
-  const max = Math.max(...row);
-  const min = Math.min(...row);
-  if (max === min) return row.map(() => 0);
-  return row.map((v) => (v - min) / (max - min));
+function globalNormalize(matrix: readonly (readonly number[])[], excludeDiagonal: boolean): number[][] {
+  let max = -Infinity;
+  let min = Infinity;
+  for (let i = 0; i < matrix.length; i++) {
+    for (let j = 0; j < matrix[i]!.length; j++) {
+      if (excludeDiagonal && i === j) continue;
+      const v = matrix[i]![j]!;
+      if (v > max) max = v;
+      if (v < min) min = v;
+    }
+  }
+  if (max === min) return matrix.map((row) => row.map(() => 0));
+  return matrix.map((row) => row.map((v) => (v - min) / (max - min)));
 }
 
-function topKFromMatrix(matrix: readonly (readonly number[])[], cardIds: readonly number[], k: number): Map<number, Neighbor[]> {
+function topKFromMatrix(
+  matrix: readonly (readonly number[])[],
+  cardIds: readonly number[],
+  k: number,
+): Map<number, Neighbor[]> {
   const result = new Map<number, Neighbor[]>();
   for (let i = 0; i < cardIds.length; i++) {
     const row = matrix[i]!;
-    const normalized = normalizeRow(row);
-    const scored = normalized
+    const scored = row
       .map((weight, j) => ({ cardId: cardIds[j]!, weight, index: j }))
       .filter((entry) => entry.index !== i)
       .sort((a, b) => b.weight - a.weight)
@@ -37,11 +61,11 @@ function topKFromMatrix(matrix: readonly (readonly number[])[], cardIds: readonl
 /**
  * Computes each card's top-k neighbors three ways: local embedding cosine
  * similarity, BM25 over the question ("front") text, and their average
- * (each normalized to [0,1] per row before averaging, since raw BM25 scores
- * and cosine similarities live on incomparable scales). All local — no LLM
- * calls. Similarity is computed over `front` only (the studied content),
- * not `back` (translation/answer gloss), matching the same content-vs-
- * translation-language distinction the extraction prompt now applies.
+ * (both put on a comparable absolute [0,1] scale — see `Neighbor.weight` —
+ * before averaging). All local — no LLM calls. Similarity is computed over
+ * `front` only (the studied content), not `back` (translation/answer
+ * gloss), matching the same content-vs-translation-language distinction
+ * the extraction prompt now applies.
  */
 export async function computeNeighborSets(
   cards: readonly { cardId: number; front: string }[],
@@ -58,23 +82,22 @@ export async function computeNeighborSets(
   const embeddingMatrix: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      if (i !== j) embeddingMatrix[i]![j] = cosineSimilarity(vectors[i]!, vectors[j]!);
+      if (i !== j) embeddingMatrix[i]![j] = Math.max(0, cosineSimilarity(vectors[i]!, vectors[j]!));
     }
   }
 
   const bm25Index = buildBm25Index(cards.map((c) => c.front));
   const queryTokens = cards.map((c) => tokenize(c.front));
-  const bm25Matrix: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+  const bm25RawMatrix: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      if (i !== j) bm25Matrix[i]![j] = bm25Index.scoreAgainst(queryTokens[i]!, j);
+      if (i !== j) bm25RawMatrix[i]![j] = bm25Index.scoreAgainst(queryTokens[i]!, j);
     }
   }
+  const bm25Matrix = globalNormalize(bm25RawMatrix, true);
 
-  const embeddingNormalized = embeddingMatrix.map(normalizeRow);
-  const bm25Normalized = bm25Matrix.map(normalizeRow);
   const averageMatrix: number[][] = Array.from({ length: n }, (_, i) =>
-    embeddingNormalized[i]!.map((v, j) => (v + bm25Normalized[i]![j]!) / 2),
+    embeddingMatrix[i]!.map((v, j) => (v + bm25Matrix[i]![j]!) / 2),
   );
 
   return {

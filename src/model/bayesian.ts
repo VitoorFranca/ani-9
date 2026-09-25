@@ -19,6 +19,24 @@ export interface BayesianHyperparams {
   driftPerDay: number;
 }
 
+/**
+ * Rescales a raw absolute-scale similarity (see neighbors.ts's
+ * `Neighbor.weight`) into a link weight, with two knobs meant to be
+ * grid-searched on train data alongside the hyperparameters above:
+ *  - `tau` (floor): similarity at or below `tau` contributes nothing;
+ *    above it, weight rises linearly from 0 (at tau) to 1 (at similarity=1).
+ *  - `lambda` (global strength): multiplies the whole result. `lambda=0`
+ *    zeroes every link weight — including the reviewed card's own
+ *    self-link — which makes GraphBayesianModel a pure FSRS pass-through
+ *    (theta can never move away from 0), so a grid search that includes
+ *    lambda=0 can never do worse than the FSRS baseline on the metric it
+ *    optimizes.
+ */
+export function rescaleSimilarity(similarity: number, tau: number, lambda: number): number {
+  if (tau >= 1) return 0;
+  return lambda * Math.max(0, (similarity - tau) / (1 - tau));
+}
+
 export interface WeightedLink {
   id: number;
   weight: number;

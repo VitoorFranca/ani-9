@@ -78,6 +78,30 @@ describe("computeNeighborSets", () => {
     }
   });
 
+  it("gives a card with no genuinely related neighbor a low weight, not a forced 1.0 (global, not per-row, scaling)", async () => {
+    // Two near-duplicate cards (a, b), plus an isolated card (c) whose best
+    // match is still fairly distant from everything. Per-row min-max
+    // normalization would force c's top neighbor to weight 1.0 regardless;
+    // global normalization should keep it low since a<->b is far more
+    // similar than c is to anything.
+    const embedder = fakeEmbedder({
+      a: [1, 0, 0],
+      b: [0.99, 0.01, 0],
+      c: [0.3, 0.3, 0.9], // clearly less similar to a or b than they are to each other
+    });
+    const cards = [
+      { cardId: 1, front: "a" },
+      { cardId: 2, front: "b" },
+      { cardId: 3, front: "c" },
+    ];
+    const { embedding } = await computeNeighborSets(cards, embedder, 2);
+
+    const aTopWeight = embedding.get(1)?.[0]?.weight ?? 0;
+    const cTopWeight = embedding.get(3)?.[0]?.weight ?? 0;
+    expect(aTopWeight).toBeGreaterThan(0.9); // a<->b: near-duplicate
+    expect(cTopWeight).toBeLessThan(0.5); // c: no real match, should NOT be forced to ~1.0
+  });
+
   it("limits results to k neighbors", async () => {
     const cards = Array.from({ length: 10 }, (_, i) => ({ cardId: i, front: `card number ${i}` }));
     const vectorByText = Object.fromEntries(cards.map((c) => [c.front, [Math.random(), Math.random()]]));

@@ -1,9 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { GraphBayesianModel, gridSearchHyperparams } from "../../src/model/bayesian.js";
+import { GraphBayesianModel, gridSearchHyperparams, rescaleSimilarity } from "../../src/model/bayesian.js";
 
 const HP = { priorVariance: 1, driftPerDay: 0.01 };
 
+describe("rescaleSimilarity", () => {
+  it("returns 0 for similarity at or below tau", () => {
+    expect(rescaleSimilarity(0.5, 0.5, 1)).toBe(0);
+    expect(rescaleSimilarity(0.3, 0.5, 1)).toBe(0);
+  });
+
+  it("returns lambda at similarity=1 (full strength)", () => {
+    expect(rescaleSimilarity(1, 0.5, 1)).toBeCloseTo(1);
+    expect(rescaleSimilarity(1, 0.5, 2)).toBeCloseTo(2);
+  });
+
+  it("scales linearly between tau and 1", () => {
+    // tau=0.5: similarity=0.75 is halfway to 1 -> weight 0.5*lambda
+    expect(rescaleSimilarity(0.75, 0.5, 1)).toBeCloseTo(0.5);
+  });
+
+  it("lambda=0 zeroes every weight regardless of similarity", () => {
+    expect(rescaleSimilarity(1, 0, 0)).toBe(0);
+    expect(rescaleSimilarity(0.9, 0.1, 0)).toBe(0);
+  });
+
+  it("tau=0 behaves like a plain lambda multiplier with no floor", () => {
+    expect(rescaleSimilarity(0.4, 0, 1)).toBeCloseTo(0.4);
+  });
+
+  it("never returns a negative weight", () => {
+    expect(rescaleSimilarity(0, 0.8, 1)).toBe(0);
+  });
+});
+
 describe("GraphBayesianModel", () => {
+  it("stays an exact FSRS pass-through across repeated reviews when every link weight is 0 (lambda=0 case)", () => {
+    const model = new GraphBayesianModel(HP);
+    const links = [
+      { id: 1, weight: 0 }, // as rescaleSimilarity(_, _, 0) would produce
+      { id: 2, weight: 0 },
+    ];
+    for (const [fsrsR, y] of [[0.9, 1], [0.2, 0], [0.5, 1], [0.99, 0]] as [number, 0 | 1][]) {
+      const p = model.predictAndUpdate(links, fsrsR, y, 0);
+      expect(p).toBeCloseTo(fsrsR, 6);
+    }
+    // theta never moved for either linked node.
+    expect(model.getState(1)!.theta).toBe(0);
+    expect(model.getState(2)!.theta).toBe(0);
+  });
+
   it("equivalence: with every theta at 0, the prediction equals the FSRS R exactly (mandatory test)", () => {
     // Arbitrary link weights, including neighbors — doesn't matter since theta=0 everywhere on first use.
     const links = [
