@@ -33,6 +33,33 @@ describe("rescaleSimilarity", () => {
   });
 });
 
+describe("GraphBayesianModel with string node ids (concept-membership model)", () => {
+  it("links a card to its concept names directly, with no self-link, and propagates evidence between cards sharing a concept", () => {
+    const model = new GraphBayesianModel<string>(HP);
+    // Card A has concepts {"past simple", "phrasal verb: call off"}; card B shares only "past simple".
+    const cardALinks = [
+      { id: "past simple", weight: 1 },
+      { id: "phrasal verb: call off", weight: 1 },
+    ];
+    const cardBLinks = [{ id: "past simple", weight: 1 }];
+
+    model.predictAndUpdate(cardALinks, 0.5, 1, 0); // card A reviewed correctly
+    expect(model.getState("past simple")!.theta).toBeGreaterThan(0);
+    expect(model.getState("phrasal verb: call off")!.theta).toBeGreaterThan(0);
+
+    // Card B, never reviewed before, should already predict above raw FSRS R
+    // because it shares "past simple" with card A.
+    const pB = model.predictAndUpdate(cardBLinks, 0.5, 1, 0);
+    expect(pB).toBeGreaterThan(0.5);
+  });
+
+  it("equivalence still holds with string ids: theta=0 everywhere means p=fsrsR", () => {
+    const model = new GraphBayesianModel<string>(HP);
+    const p = model.predictAndUpdate([{ id: "some concept", weight: 1 }], 0.73, 1, 0);
+    expect(p).toBeCloseTo(0.73, 3);
+  });
+});
+
 describe("GraphBayesianModel", () => {
   it("stays an exact FSRS pass-through across repeated reviews when every link weight is 0 (lambda=0 case)", () => {
     const model = new GraphBayesianModel(HP);

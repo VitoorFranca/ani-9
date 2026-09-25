@@ -37,8 +37,8 @@ export function rescaleSimilarity(similarity: number, tau: number, lambda: numbe
   return lambda * Math.max(0, (similarity - tau) / (1 - tau));
 }
 
-export interface WeightedLink {
-  id: number;
+export interface WeightedLink<Id = number> {
+  id: Id;
   weight: number;
 }
 
@@ -50,27 +50,27 @@ interface NodeState {
 
 /**
  * Online Gaussian-approximation logistic model over an arbitrary weighted
- * graph of nodes (here: cards linked to their own top-k similarity
- * neighbors, each card also linked to itself with weight 1). This is the
- * spec's original per-concept Bayesian update (prior variance, per-day
- * drift, closed-form online logistic step) with "concept" generalized to
- * "linked node" — a card's own id plays the role a concept name used to
- * play, and neighbor similarity plays the role concept weight (q_ic) used
- * to play. With every node's theta at 0, predictAndUpdate returns exactly
- * `fsrsR` (see the equivalence test) — the model is a pure FSRS pass-through
- * until evidence accumulates.
+ * graph of nodes. Generic over the node id type: the neighbor-similarity
+ * model links a card to itself (weight 1) plus its top-k neighbor cards
+ * (`Id = number`); the concept-membership model links a card directly to
+ * the names of the concepts it has (`Id = string`), with no self-link —
+ * exactly the spec's original per-concept Bayesian update (prior variance,
+ * per-day drift, closed-form online logistic step), just phrased generically
+ * so both linking schemes reuse the same math. With every node's theta at
+ * 0, predictAndUpdate returns exactly `fsrsR` (see the equivalence test) —
+ * the model is a pure FSRS pass-through until evidence accumulates.
  */
-export class GraphBayesianModel {
-  private readonly nodes = new Map<number, NodeState>();
+export class GraphBayesianModel<Id = number> {
+  private readonly nodes = new Map<Id, NodeState>();
 
   constructor(private readonly hp: BayesianHyperparams) {}
 
-  getState(id: number): { theta: number; variance: number } | undefined {
+  getState(id: Id): { theta: number; variance: number } | undefined {
     const node = this.nodes.get(id);
     return node ? { theta: node.theta, variance: node.variance } : undefined;
   }
 
-  private getOrInitNode(id: number, day: number): NodeState {
+  private getOrInitNode(id: Id, day: number): NodeState {
     let node = this.nodes.get(id);
     if (!node) {
       node = { theta: 0, variance: this.hp.priorVariance, lastUpdateDay: day };
@@ -95,7 +95,7 @@ export class GraphBayesianModel {
    * atualizar."
    */
   predictAndUpdate(
-    links: readonly WeightedLink[],
+    links: readonly WeightedLink<Id>[],
     fsrsR: number,
     y: 0 | 1,
     day: number,
