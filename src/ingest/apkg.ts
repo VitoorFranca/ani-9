@@ -20,11 +20,19 @@ const DB_CANDIDATES = [
  * better-sqlite3's Buffer-based in-memory constructor (`new Database(buf)`)
  * opens but fails to deserialize real data in this build (SQLITE_CANTOPEN on
  * first query), so the decompressed db is written to a temp file instead.
+ *
+ * A real .apkg is mostly media (audio/images), which can dwarf the actual
+ * database by 10-100x. The `filter` skips decompressing anything except the
+ * three candidate db filenames, so unzipSync doesn't waste time/memory
+ * inflating media we're going to ignore anyway.
  */
 export async function openApkgDatabase(
   apkgBuffer: Buffer,
 ): Promise<{ db: Database.Database; cleanup: () => void }> {
-  const entries = unzipSync(new Uint8Array(apkgBuffer));
+  const wanted = new Set<string>(DB_CANDIDATES);
+  const entries = unzipSync(new Uint8Array(apkgBuffer), {
+    filter: (file) => wanted.has(file.name),
+  });
 
   for (const name of DB_CANDIDATES) {
     const entry = entries[name];
