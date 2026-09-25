@@ -4,3 +4,4 @@ export { computeNeighborSets } from "./neighbors.js";
 export type { Neighbor, NeighborMethod, NeighborSets } from "./neighbors.js";
 export { GraphBayesianModel, gridSearchHyperparams, rescaleSimilarity } from "./bayesian.js";
 export type { BayesianHyperparams, WeightedLink, GridSearchResult, GridSearchTrial } from "./bayesian.js";
+export { computeConceptNoteCoverage, sameNoteOnlyConcepts, removeConcepts } from "./concept-coverage.js";
