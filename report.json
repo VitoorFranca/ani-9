@@ -1,0 +1,153 @@
+{
+  "phase": 1,
+  "question": "A camada de conceitos prevê a recordação do usuário melhor do que o FSRS puro, nos dados reais dele?",
+  "verdict": "evidência sugestiva",
+  "verdictRule": "Classificado como 'evidência sugestiva' (não confirmado) porque o bootstrap por cartão contra o FSRS ainda cruza zero, mesmo com p<0.05 no teste de permutação.",
+  "deck": {
+    "file": "data/English.apkg",
+    "totalCards": 13523,
+    "eligibleCards": 926,
+    "totalRevlog": 18953,
+    "keptReviews": 5157,
+    "cardToNoteRatio": 1.0,
+    "periodNote": "Resets em massa (type=4, factor=0) em 13523 entradas, todos dentro de uma janela de 14s — artefato de importação/geração do baralho, não ação manual do usuário."
+  },
+  "pipeline": {
+    "approachesTried": [
+      {
+        "name": "extração aberta por LLM (Anthropic Haiku) + canonicalização por embedding",
+        "outcome": "abandonada",
+        "reasons": [
+          "rótulos compostos (gramática+vocabulário fundidos)",
+          "colapso de canonicalização por limiar fixo de similaridade (não separa sinônimos verdadeiros de pares não relacionados)",
+          "mesmo com verificação de grupo e divisão determinística de rótulos, persistiu confusão entre conteúdo estudado (inglês) e idioma da tradução de apoio (português)"
+        ]
+      },
+      {
+        "name": "modelo de vizinhos por similaridade local (embeddings + BM25, sem LLM)",
+        "outcome": "resultado negativo, descartado",
+        "reasons": [
+          "normalização de peso por linha (min-max) inflava a confiança em vizinhos fracos — corrigido com peso em escala absoluta + reescala tau/lambda",
+          "mesmo corrigido, nenhuma das 3 variantes (embedding, bm25, média) superou o FSRS otimizado com significância no teste"
+        ]
+      },
+      {
+        "name": "lista fixa de conceitos (Gemini 3.1 Flash-Lite, classificação em conjunto fechado) + vocabulário por regra",
+        "outcome": "adotada — evidência sugestiva de melhora",
+        "notes": "elimina o problema de canonicalização por construção: a lista é fixa e revisada por humano antes do uso; o LLM só escolhe entre itens existentes, nunca cria novos."
+      }
+    ],
+    "fixedListGeneration": {
+      "model": "gemini-3.1-flash-lite",
+      "sampleSize": 100,
+      "samplingRule": "prioriza cartões com front multi-palavra (frases) sobre cartões de palavra única, detectado estruturalmente (não por nome de notetype)",
+      "conceptCount": 22,
+      "reviewedByUser": true
+    },
+    "classification": {
+      "model": "gemini-3.1-flash-lite",
+      "thinkingLevel": "MINIMAL",
+      "totalCards": 926,
+      "batches": 24,
+      "calls": 24,
+      "failedBatches": 0,
+      "inputTokens": 62371,
+      "outputTokens": 32914,
+      "costUsd": 0.06496,
+      "cardsWithAnyFixedListConcept": 237
+    },
+    "vocabulary": {
+      "method": "regra determinística (tokenização do front, sem LLM)",
+      "totalDistinctConcepts": 1528,
+      "conceptsLinkingOnlyOneNote": 1046
+    },
+    "model": {
+      "type": "GraphBayesianModel genérico (spec original per-concept adaptado)",
+      "linking": "card -> nomes de conceitos (lista fixa + vocabulário), sem self-link",
+      "hyperparameters": ["priorVariance", "driftPerDay", "lambda"],
+      "lambdaSafety": "lambda=0 zera todos os pesos -> pass-through exato do FSRS; garante que a busca em grade nunca piora o baseline no treino",
+      "trainTestSplit": "70/30 cronológico global, conforme Fase 1"
+    }
+  },
+  "metrics": {
+    "allCards": {
+      "n": 1095,
+      "constant": { "logLoss": 0.2859, "auc": 0.5, "calibRmse": 0.0223 },
+      "fsrsOptimized": { "logLoss": 0.2608, "auc": 0.7430, "calibRmse": 0.0369 },
+      "conceptsWithSameNote": { "logLoss": 0.2589, "auc": 0.7609, "calibRmse": 0.0653 },
+      "conceptsWithoutSameNote": { "logLoss": 0.2576, "auc": 0.7642, "calibRmse": 0.0679 },
+      "bootstrapVsFsrs": {
+        "withSameNote": { "meanDelta": 0.0019, "ci95": [-0.0065, 0.0091] },
+        "withoutSameNote": { "meanDelta": 0.0031, "ci95": [-0.0086, 0.0124] }
+      }
+    },
+    "crossNoteCardsOnly": {
+      "n": 532,
+      "note": "cartões com >=1 conceito que liga pelo menos 2 notas distintas (exclui conceitos de vocabulário raro/único)",
+      "constant": { "logLoss": 0.1493, "auc": 0.5, "calibRmse": 0.0270 },
+      "fsrsOptimized": { "logLoss": 0.1603, "auc": 0.6937, "calibRmse": 0.0650 },
+      "fsrsRecalibrated": { "logLoss": 0.1565, "auc": 0.6937, "calibRmse": 0.0605, "globalBias": 0.070 },
+      "conceptsWithSameNote": { "logLoss": 0.1461, "auc": 0.7280, "calibRmse": 0.0809 },
+      "conceptsWithoutSameNote": { "logLoss": 0.1538, "auc": 0.7373, "calibRmse": 0.1023 },
+      "bootstrapVsFsrs": {
+        "withSameNote": { "meanDelta": 0.0141, "ci95": [-0.0027, 0.0285] },
+        "withoutSameNote": { "meanDelta": 0.0062, "ci95": [-0.0183, 0.0260] }
+      },
+      "bootstrapVsFsrsRecalibrated": {
+        "withSameNote": { "meanDelta": 0.0102, "ci95": [-0.0066, 0.0242] }
+      }
+    }
+  },
+  "controls": {
+    "recalibration": {
+      "description": "FSRS + único ajuste de viés global (logit), ajustado no treino por busca em grade",
+      "purpose": "testar se o ganho é só recalibração genérica de FSRS mal calibrado",
+      "result": "recalibração sozinha melhora pouco (0.1603 -> 0.1565); modelo de conceitos ainda melhor (0.1461) mesmo contra o FSRS recalibrado",
+      "conclusion": "ganho não explicado por recalibração genérica"
+    },
+    "permutation": {
+      "description": "conceitos embaralhados entre cartões (preservando quantos cada cartão tem e a frequência global de cada conceito), refazendo a MESMA busca em grade de priorVariance/driftPerDay/lambda no treino a cada permutação",
+      "iterations": 1000,
+      "realLogLoss": 0.1461,
+      "permutedDistribution": {
+        "mean": 0.1700,
+        "sd": 0.0079,
+        "min": 0.1600,
+        "max": 0.1972,
+        "p1": 0.1603,
+        "p5": 0.1603,
+        "p25": 0.1616,
+        "p50": 0.1692,
+        "p75": 0.1761,
+        "p95": 0.1833,
+        "p99": 0.1889
+      },
+      "permutationsBeatingOrTyingReal": 0,
+      "empiricalP": 0.001,
+      "conclusion": "o valor real fica abaixo de TODAS as 1000 permutações (inclusive o mínimo); o conteúdo específico dos conceitos, não apenas a flexibilidade do modelo, explica o ganho"
+    }
+  },
+  "fixedListConcepts": [
+    "phrasal verb: get away with", "phrasal verb: pass away", "phrasal verb: sleep over",
+    "phrasal verb: call off", "phrasal verb: pull together", "phrasal verb: come up with",
+    "phrasal verb: find out", "phrasal verb: back up", "phrasal verb: dress up",
+    "phrasal verb: go back", "phrasal verb: keep on", "phrasal verb: sober up",
+    "expressão idiomática: take for granted", "expressão idiomática: long shot",
+    "expressão idiomática: when it comes to", "expressão idiomática: so far, so good",
+    "expressão idiomática: not my cup of tea", "expressão idiomática: can't help but",
+    "expressão idiomática: at all", "expressão idiomática: go against",
+    "expressão idiomática: I'll have you know", "expressão idiomática: might as well"
+  ],
+  "cost": {
+    "totalGeminiCallsThisApproach": 25,
+    "totalCostUsdThisApproach": 0.06496,
+    "note": "custo cumulativo de tentativas anteriores (Anthropic + Gemini list generation) não incluído aqui; ver histórico de commits para o valor gasto em cada abordagem descartada (~US$1.13 em extração aberta pelo Anthropic no CIMV.apkg, ~US$0.004 na geração da lista fixa)."
+  },
+  "knownLimitations": [
+    "Lista fixa gerada de uma amostra de 100 cartões, todos de notetypes com frases (Phrasal Verbs/Idiomatic Expressions) — não cobre gramática de tempos verbais nem generaliza a outros idiomas/assuntos sem nova geração.",
+    "Apenas 532/926 cartões elegíveis têm algum conceito que liga notas distintas — o efeito medido se concentra num subconjunto minoritário do baralho.",
+    "Razão cartão:nota = 1.00 neste baralho (sem cartões-irmãos) — a distinção 'same-note-only' aqui equivale a 'conceito raro (1 nota só)', não a um artefato de irmãos triviais; pode se comportar diferente em baralhos com cloze/reversos.",
+    "Bootstrap por cartão (reamostragem da incerteza da amostra observada) não cruza fora de zero, mesmo com o teste de permutação (mede se o conteúdo importa vs. aleatório) fortemente significativo — por isso o veredito é 'evidência sugestiva', não confirmada.",
+    "Elapsed-days do FSRS usa diferença de dia-calendário UTC (piso), não o horário exato de virada de dia configurado no Anki do usuário — aproximação já assumida desde o módulo fsrs."
+  ]
+}

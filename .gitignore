@@ -5,6 +5,4 @@ dist/
 .env
 /cache/
 /.cache/
-/report.md
-/report.json
 /data/*.apkg
