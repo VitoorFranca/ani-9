@@ -51,22 +51,22 @@ describe("extractConcepts", () => {
   it("extracts concepts for each card and records token usage", async () => {
     const create = vi.fn().mockResolvedValue(
       toolUseMessage([
-        { card_id: 1, concepts: [{ name: "car", weight: 0.9 }] },
-        { card_id: 2, concepts: [{ name: "house", weight: 0.7 }] },
+        { card_id: 1, concepts: [{ name: "carro", weight: 0.9 }] },
+        { card_id: 2, concepts: [{ name: "casa", weight: 0.7 }] },
       ]),
     );
     const client: MinimalAnthropicClient = { messages: { create } };
 
     const { conceptsByCard, stats } = await extractConcepts(
       [
-        { cardId: 1, text: "My car is blue" },
-        { cardId: 2, text: "My house is big" },
+        { cardId: 1, front: "My car is blue", back: "Meu carro é azul" },
+        { cardId: 2, front: "My house is big", back: "Minha casa é grande" },
       ],
       { client, cacheDir, sleep: noSleep },
     );
 
-    expect(conceptsByCard.get(1)).toEqual([{ name: "car", weight: 0.9 }]);
-    expect(conceptsByCard.get(2)).toEqual([{ name: "house", weight: 0.7 }]);
+    expect(conceptsByCard.get(1)).toEqual([{ name: "carro", weight: 0.9 }]);
+    expect(conceptsByCard.get(2)).toEqual([{ name: "casa", weight: 0.7 }]);
     expect(stats.calls).toBe(1);
     expect(stats.batches).toBe(1);
     expect(stats.cacheHits).toBe(0);
@@ -75,20 +75,35 @@ describe("extractConcepts", () => {
     expect(stats.failedBatches).toEqual([]);
   });
 
+  it("sends front/back separately, labeled PERGUNTA/RESPOSTA", async () => {
+    const create = vi.fn().mockResolvedValue(toolUseMessage([{ card_id: 1, concepts: [{ name: "carro", weight: 0.9 }] }]));
+    const client: MinimalAnthropicClient = { messages: { create } };
+
+    await extractConcepts([{ cardId: 1, front: "My car is blue", back: "Meu carro é azul" }], {
+      client,
+      cacheDir,
+      sleep: noSleep,
+    });
+
+    const prompt = create.mock.calls[0]![0].messages[0].content as string;
+    expect(prompt).toContain("PERGUNTA: My car is blue");
+    expect(prompt).toContain("RESPOSTA: Meu carro é azul");
+  });
+
   it("never re-sends a card whose content was already cached", async () => {
     const create = vi
       .fn()
-      .mockResolvedValueOnce(toolUseMessage([{ card_id: 1, concepts: [{ name: "car", weight: 0.9 }] }]));
+      .mockResolvedValueOnce(toolUseMessage([{ card_id: 1, concepts: [{ name: "carro", weight: 0.9 }] }]));
     const client: MinimalAnthropicClient = { messages: { create } };
 
-    const cards = [{ cardId: 1, text: "My car is blue" }];
+    const cards = [{ cardId: 1, front: "My car is blue", back: "Meu carro é azul" }];
     const first = await extractConcepts(cards, { client, cacheDir, sleep: noSleep });
     expect(first.stats.cacheHits).toBe(0);
     expect(create).toHaveBeenCalledTimes(1);
 
     const second = await extractConcepts(cards, { client, cacheDir, sleep: noSleep });
     expect(second.stats.cacheHits).toBe(1);
-    expect(second.conceptsByCard.get(1)).toEqual([{ name: "car", weight: 0.9 }]);
+    expect(second.conceptsByCard.get(1)).toEqual([{ name: "carro", weight: 0.9 }]);
     expect(create).toHaveBeenCalledTimes(1); // still just the one call from before
   });
 
@@ -101,8 +116,8 @@ describe("extractConcepts", () => {
 
     const { stats } = await extractConcepts(
       [
-        { cardId: 1, text: "one" },
-        { cardId: 2, text: "two" },
+        { cardId: 1, front: "one", back: "um" },
+        { cardId: 2, front: "two", back: "dois" },
       ],
       { client, cacheDir, batchSize: 1, sleep: noSleep },
     );
@@ -118,17 +133,17 @@ describe("extractConcepts", () => {
     const create = vi
       .fn()
       .mockResolvedValueOnce(badMessage)
-      .mockResolvedValueOnce(toolUseMessage([{ card_id: 1, concepts: [{ name: "car", weight: 0.9 }] }]));
+      .mockResolvedValueOnce(toolUseMessage([{ card_id: 1, concepts: [{ name: "carro", weight: 0.9 }] }]));
     const client: MinimalAnthropicClient = { messages: { create } };
 
     const { conceptsByCard, stats } = await extractConcepts(
-      [{ cardId: 1, text: "My car is blue" }],
+      [{ cardId: 1, front: "My car is blue", back: "Meu carro é azul" }],
       { client, cacheDir, maxRetriesPerBatch: 2, sleep: noSleep },
     );
 
     expect(create).toHaveBeenCalledTimes(2);
     expect(stats.calls).toBe(2);
-    expect(conceptsByCard.get(1)).toEqual([{ name: "car", weight: 0.9 }]);
+    expect(conceptsByCard.get(1)).toEqual([{ name: "carro", weight: 0.9 }]);
     expect(stats.failedBatches).toEqual([]);
   });
 
@@ -137,7 +152,7 @@ describe("extractConcepts", () => {
     const client: MinimalAnthropicClient = { messages: { create } };
 
     const { conceptsByCard, stats } = await extractConcepts(
-      [{ cardId: 1, text: "My car is blue" }],
+      [{ cardId: 1, front: "My car is blue", back: "Meu carro é azul" }],
       { client, cacheDir, maxRetriesPerBatch: 1, sleep: noSleep },
     );
 
@@ -150,27 +165,27 @@ describe("extractConcepts", () => {
   it("feeds concepts already seen in one batch as known concepts to the next batch's prompt", async () => {
     const create = vi
       .fn()
-      .mockResolvedValueOnce(toolUseMessage([{ card_id: 1, concepts: [{ name: "car", weight: 0.9 }] }]))
-      .mockResolvedValueOnce(toolUseMessage([{ card_id: 2, concepts: [{ name: "car", weight: 0.8 }] }]));
+      .mockResolvedValueOnce(toolUseMessage([{ card_id: 1, concepts: [{ name: "carro", weight: 0.9 }] }]))
+      .mockResolvedValueOnce(toolUseMessage([{ card_id: 2, concepts: [{ name: "carro", weight: 0.8 }] }]));
     const client: MinimalAnthropicClient = { messages: { create } };
 
     await extractConcepts(
       [
-        { cardId: 1, text: "one" },
-        { cardId: 2, text: "two" },
+        { cardId: 1, front: "one", back: "um" },
+        { cardId: 2, front: "two", back: "dois" },
       ],
       { client, cacheDir, batchSize: 1, sleep: noSleep },
     );
 
     const secondCallPrompt = create.mock.calls[1]![0].messages[0].content as string;
-    expect(secondCallPrompt).toContain("car");
+    expect(secondCallPrompt).toContain("carro");
   });
 
   it("rejects a card with more than 6 concepts as invalid, triggering a retry", async () => {
     const tooMany = toolUseMessage([
       {
         card_id: 1,
-        concepts: Array.from({ length: 7 }, (_, i) => ({ name: `concept-${i}`, weight: 0.5 })),
+        concepts: Array.from({ length: 7 }, (_, i) => ({ name: `conceito-${i}`, weight: 0.5 })),
       },
     ]);
     const create = vi
@@ -180,7 +195,7 @@ describe("extractConcepts", () => {
     const client: MinimalAnthropicClient = { messages: { create } };
 
     const { conceptsByCard } = await extractConcepts(
-      [{ cardId: 1, text: "some card" }],
+      [{ cardId: 1, front: "some card", back: "algum cartão" }],
       { client, cacheDir, sleep: noSleep },
     );
 
@@ -191,10 +206,10 @@ describe("extractConcepts", () => {
   it("splits a batch on stop_reason=max_tokens and still extracts both cards", async () => {
     const create = vi.fn().mockImplementation(async (params: { messages: { content: string }[] }) => {
       const prompt = params.messages[0]!.content;
-      if (prompt.includes("Card 1:") && prompt.includes("Card 2:")) {
+      if (prompt.includes("Cartão 1") && prompt.includes("Cartão 2")) {
         return { ...toolUseMessage([]), stop_reason: "max_tokens" } as Anthropic.Message;
       }
-      if (prompt.includes("Card 1:")) {
+      if (prompt.includes("Cartão 1")) {
         return toolUseMessage([{ card_id: 1, concepts: [{ name: "a", weight: 1 }] }]);
       }
       return toolUseMessage([{ card_id: 2, concepts: [{ name: "b", weight: 1 }] }]);
@@ -203,8 +218,8 @@ describe("extractConcepts", () => {
 
     const { conceptsByCard, stats } = await extractConcepts(
       [
-        { cardId: 1, text: "one" },
-        { cardId: 2, text: "two" },
+        { cardId: 1, front: "one", back: "um" },
+        { cardId: 2, front: "two", back: "dois" },
       ],
       { client, cacheDir, sleep: noSleep },
     );

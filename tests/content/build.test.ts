@@ -14,14 +14,26 @@ function collection(overrides: Partial<AnkiCollection> = {}): AnkiCollection {
 }
 
 describe("buildNormalizedCards", () => {
-  it("joins and normalizes all fields of the note", () => {
+  it("splits the first field as front and the rest as back, joining both into text", () => {
     const col = collection({
       notes: [{ id: 1, guid: "g", modelId: 1, tags: [], fields: ["<b>Hello</b>", "World[sound:x.mp3]"] }],
       cards: [{ id: 10, noteId: 1, deckId: 1, ord: 0 }],
     });
     const [card] = buildNormalizedCards(col);
+    expect(card?.front).toBe("Hello");
+    expect(card?.back).toBe("World");
     expect(card?.text).toBe("Hello World");
     expect(card?.contentless).toBe(false);
+  });
+
+  it("joins fields past the second into back for note types with more than 2 fields", () => {
+    const col = collection({
+      notes: [{ id: 1, guid: "g", modelId: 1, tags: [], fields: ["Occlusion", "Image", "Header", "Comments"] }],
+      cards: [{ id: 10, noteId: 1, deckId: 1, ord: 0 }],
+    });
+    const [card] = buildNormalizedCards(col);
+    expect(card?.front).toBe("Occlusion");
+    expect(card?.back).toBe("Image Header Comments");
   });
 
   it("marks a card contentless when only media remains after normalization", () => {
@@ -61,9 +73,9 @@ describe("buildNormalizedCards", () => {
 describe("groupCardsByNote", () => {
   it("groups sibling cards under their shared note id", () => {
     const cards = [
-      { cardId: 1, noteId: 100, ord: 0, text: "a", contentless: false },
-      { cardId: 2, noteId: 100, ord: 1, text: "b", contentless: false },
-      { cardId: 3, noteId: 200, ord: 0, text: "c", contentless: false },
+      { cardId: 1, noteId: 100, ord: 0, front: "a", back: "", text: "a", contentless: false },
+      { cardId: 2, noteId: 100, ord: 1, front: "b", back: "", text: "b", contentless: false },
+      { cardId: 3, noteId: 200, ord: 0, front: "c", back: "", text: "c", contentless: false },
     ];
     const grouped = groupCardsByNote(cards);
     expect(grouped.get(100)?.map((c) => c.cardId)).toEqual([1, 2]);

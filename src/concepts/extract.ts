@@ -10,16 +10,26 @@ export const DEFAULT_MODEL = "claude-haiku-4-5";
 const MAX_CONCEPTS_PER_CARD = 6;
 /**
  * Bumped whenever buildExtractionPrompt's instructions change in a way that
- * would produce different concepts for the same card text — folded into the
- * cache key so a prompt change can't silently serve stale cached results
- * (e.g. "v1" produced compound labels like "Pretérito imperfeito (acabava)";
- * "v2" requires atomic, single-idea concepts instead).
+ * would produce different concepts for the same card content — folded into
+ * the cache key so a prompt change can't silently serve stale cached
+ * results. History: "v1" produced compound labels like "Pretérito
+ * imperfeito (acabava)"; "v2-atomic" asked for atomic single-idea concepts
+ * (only partially followed — real runs still produced ~48% compound labels,
+ * fixed downstream by postprocess.ts's deterministic split instead); "v3"
+ * fixes a different bug confirmed on real data: with front=English/
+ * back=Portuguese-translation cards, extraction kept labeling Portuguese
+ * translation-gloss grammar ("pretérito imperfeito") instead of the English
+ * content actually being studied. v3 sends front/back separately, labeled
+ * PERGUNTA/RESPOSTA, and instructs the model to describe the studied
+ * content rather than the language the question or answer happens to be
+ * written in.
  */
-const EXTRACTION_PROMPT_VERSION = "v2-atomic";
+const EXTRACTION_PROMPT_VERSION = "v3-content-not-language";
 
 export interface ExtractableCard {
   cardId: number;
-  text: string;
+  front: string;
+  back: string;
 }
 
 interface RawExtractionResult {
@@ -57,27 +67,48 @@ function validateExtractionResult(input: unknown): RawExtractionResult {
 }
 
 function buildExtractionPrompt(cards: readonly ExtractableCard[], knownConcepts: readonly string[]): string {
-  const knownList = knownConcepts.length > 0 ? knownConcepts.join(", ") : "(none yet)";
-  const cardLines = cards.map((c) => `Card ${c.cardId}: ${c.text}`).join("\n");
+  const knownList = knownConcepts.length > 0 ? knownConcepts.join(", ") : "(nenhum ainda)";
+  const cardLines = cards
+    .map((c) => `Cartão ${c.cardId} — PERGUNTA: ${c.front} — RESPOSTA: ${c.back}`)
+    .join("\n");
 
-  return `You are analyzing flashcards from a spaced-repetition study app. The user writes their own cards, about any subject. For each card, extract the underlying concepts a learner must know to answer it correctly.
+  return `Você está analisando flashcards de um aplicativo de repetição espaçada. O usuário cria seus próprios cartões, sobre qualquer assunto. Para cada cartão, liste o conhecimento necessário para acertá-lo.
 
-Aim for a level of granularity useful for diagnosing WHY a specific card might be answered wrong later — not a broad subject label (e.g. "English", "programming", "history"), and not something so narrow it only ever applies to this one card's exact wording. A good concept is reusable: the same word, grammar rule, formula, date, or fact, named consistently so it can be recognized across different cards.
+Instrução central: descreva o CONTEÚDO ESTUDADO no cartão — nunca o idioma em que a pergunta ou a resposta estão escritas. O idioma usado é só o meio; o que importa é o que o cartão está de fato ensinando ou testando. Isso vale mesmo em cartões de idioma: se o cartão ensina uma frase em inglês com uma tradução em português apenas como apoio, o conteúdo estudado é o inglês, não a gramática do português da tradução.
 
-Rules:
-- Each concept must be ATOMIC: it expresses exactly ONE idea — either a grammar/pattern rule, OR a single specific vocabulary item — never both combined into one label, and never a bare parenthetical example tacked onto a rule name. If a card involves both a grammar rule and a specific word/fact, extract them as TWO separate concepts.
-  - BAD: "Pretérito imperfeito (acabava)" (mixes a tense rule with one specific verb) — GOOD: "Pretérito imperfeito" and, separately, "verbo acabar".
-  - BAD: "Vocabulário: fazendeiro, esposa" (bundles two unrelated words) — GOOD: "fazendeiro" and "esposa" as two separate concepts.
-  - BAD: "Adjetivo predicativo (bonita)" — GOOD: "adjetivo predicativo" (grammar) and "bonita" (vocabulary), separately.
-- If a concept you're about to name is a close match for one already used in this deck (listed below), reuse that EXACT name instead of creating a near-duplicate.
-- "weight" is a number in (0, 1]: how central this concept is to answering the card correctly. 1.0 = the entire card hinges on it; lower values are supporting/secondary concepts.
-- Return between 1 and ${MAX_CONCEPTS_PER_CARD} concepts per card. Atomic decomposition often means more concepts than a bundled label would, but never exceed ${MAX_CONCEPTS_PER_CARD}.
-- Name concepts in the same language as the card's own content, not translated into English.
+Exemplos corretos e incorretos, em áreas diferentes:
 
-Concepts already used in this deck (reuse when applicable):
+[Idioma — cartão de inglês com tradução em português como apoio]
+PERGUNTA: "There was once a farmer and his wife"
+RESPOSTA: "Existia (havia) uma vez um fazendeiro e sua esposa"
+ERRADO: "pretérito perfeito" (descreve a gramática do PORTUGUÊS da tradução — não é isso que o cartão ensina)
+CERTO: "passado narrativo em inglês (there was)", "fazendeiro (farmer)", "esposa (wife)" (descreve o inglês que está sendo estudado)
+
+[Programação — cartão em inglês sobre Python]
+PERGUNTA: "What does this return: [x*2 for x in range(5)]?"
+RESPOSTA: "[0, 2, 4, 6, 8]"
+ERRADO: "gramática do inglês (pergunta interrogativa)" (descreve o idioma da pergunta, não o que o cartão ensina)
+CERTO: "list comprehension em Python", "função range()"
+
+[Medicina — cartão em inglês sobre farmacologia]
+PERGUNTA: "What is the mechanism of action of metformin?"
+RESPOSTA: "Reduces hepatic glucose production and increases insulin sensitivity"
+ERRADO: "vocabulário médico em inglês" (ainda descreve o idioma, não o fato médico, e é genérico demais)
+CERTO: "mecanismo de ação da metformina", "produção hepática de glicose"
+
+Regras:
+- Cada conceito deve ser ATÔMICO: uma única ideia por conceito — ou uma regra/padrão, ou um item específico de vocabulário/fato — nunca os dois juntos, e nunca um exemplo entre parênteses grudado no nome da regra. Se o cartão envolve tanto uma regra quanto um item específico, extraia os DOIS como conceitos separados.
+  - ERRADO: "vocabulário: fazendeiro, esposa" (agrupa duas palavras) — CERTO: "fazendeiro" e "esposa" separadamente.
+  - ERRADO: "pretérito imperfeito (acabava)" (mistura regra e palavra específica) — CERTO: "pretérito imperfeito" e, separadamente, "verbo acabar".
+- Se um conceito que você está prestes a nomear for próximo o suficiente de um já usado neste baralho (listado abaixo), reuse o nome EXATO em vez de criar um quase-duplicado.
+- "weight" é um número em (0, 1]: o quanto esse conceito é central para acertar o cartão. 1.0 = o cartão inteiro depende dele; valores menores são conceitos de apoio.
+- Retorne entre 1 e ${MAX_CONCEPTS_PER_CARD} conceitos por cartão. Decomposição atômica costuma exigir mais conceitos que um rótulo composto, mas nunca ultrapasse ${MAX_CONCEPTS_PER_CARD}.
+- TODOS os nomes de conceito devem estar em português, não importa o idioma do cartão.
+
+Conceitos já usados neste baralho (reuse quando aplicável):
 ${knownList}
 
-Cards:
+Cartões:
 ${cardLines}`;
 }
 
@@ -157,7 +188,7 @@ export interface ExtractConceptsResult {
 /**
  * Extracts concepts for each card via the Anthropic API, in batches, reusing
  * previously-seen concept names across batches and caching by
- * hash(model, card text) so unchanged cards are never re-sent.
+ * hash(model, front, back) so unchanged cards are never re-sent.
  */
 export async function extractConcepts(
   cards: readonly ExtractableCard[],
@@ -183,7 +214,7 @@ export async function extractConcepts(
   const cacheKeyModel = `${model}::${EXTRACTION_PROMPT_VERSION}`;
   const pending: (ExtractableCard & { hash: string })[] = [];
   for (const card of cards) {
-    const hash = hashCardContent(cacheKeyModel, card.text);
+    const hash = hashCardContent(cacheKeyModel, `${card.front}\u0001${card.back}`);
     const cached = await cache.get(hash);
     if (cached) {
       conceptsByCard.set(card.cardId, cached);
