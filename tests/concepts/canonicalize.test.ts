@@ -36,6 +36,28 @@ function mergeMessage(decisions: { index: number; merge: boolean; reason?: strin
   } as unknown as Anthropic.Message;
 }
 
+/** Accepts every proposed group as-is — used when a test doesn't care about group-verification splitting. */
+function acceptAllGroupsMessage(groups: string[][]): Anthropic.Message {
+  return {
+    id: "msg_2",
+    type: "message",
+    role: "assistant",
+    model: "claude-haiku-4-5",
+    content: [{ type: "tool_use", id: "t2", name: "verify_group", input: { groups }, caller: { type: "direct" } }],
+    stop_reason: "tool_use",
+    stop_sequence: null,
+    usage: {
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      server_tool_use: null,
+      service_tier: null,
+      cache_creation: null,
+    },
+  } as unknown as Anthropic.Message;
+}
+
 describe("findCandidatePairs", () => {
   it("pairs up the two identical concepts as each other's top neighbor, deduplicated", async () => {
     // a and b are identical (sim=1); c is orthogonal to both, but with k=1
@@ -161,12 +183,16 @@ describe("canonicalizeConcepts", () => {
     expect(merges).toEqual([]);
   });
 
-  it("handles transitive merges across three concepts via union-find", async () => {
+  it("handles transitive merges across three concepts via union-find, confirmed by group verification", async () => {
     const embedder = fakeEmbedder({ a: [1, 0, 0], b: [0.99, 0.01, 0], c: [0.98, 0.02, 0] });
     // All three are mutually close, so a<->b, a<->c and b<->c all end up as
-    // candidates with k=2; confirming all of them as merges should still
-    // collapse to a single group via union-find regardless of pair order.
-    const create = vi.fn().mockImplementation(async (params: { messages: { content: string }[] }) => {
+    // candidates with k=2; confirming all of them as merges collapses them
+    // into one transitive group (size 3), which then goes through group
+    // verification (size > 2) — the mock accepts the group as-is.
+    const create = vi.fn().mockImplementation(async (params: { tools: { name: string }[]; messages: { content: string }[] }) => {
+      if (params.tools[0]?.name === "verify_group") {
+        return acceptAllGroupsMessage([["a", "b", "c"]]);
+      }
       const lines = params.messages[0]!.content.split("\n").filter((l) => /^\d+\./.test(l));
       return mergeMessage(lines.map((_, index) => ({ index, merge: true })));
     });
@@ -187,6 +213,70 @@ describe("canonicalizeConcepts", () => {
     const canonical = canonicalNameByOriginal.get("b");
     expect(canonicalNameByOriginal.get("a")).toBe(canonical);
     expect(canonicalNameByOriginal.get("c")).toBe(canonical);
+  });
+
+  it("splits an over-broad transitive group via group verification, undoing a chained bad merge", async () => {
+    // a<->b and b<->c both get individually (and wrongly, in isolation)
+    // confirmed as merges, chaining a and c together via union-find even
+    // though they're not the same concept. Group verification, seeing all
+    // three together, should split c back out.
+    const embedder = fakeEmbedder({ a: [1, 0, 0], b: [0.99, 0.01, 0], c: [0.98, 0.02, 0] });
+    const create = vi.fn().mockImplementation(async (params: { tools: { name: string }[]; messages: { content: string }[] }) => {
+      if (params.tools[0]?.name === "verify_group") {
+        return acceptAllGroupsMessage([["a", "b"], ["c"]]);
+      }
+      const lines = params.messages[0]!.content.split("\n").filter((l) => /^\d+\./.test(l));
+      return mergeMessage(lines.map((_, index) => ({ index, merge: true })));
+    });
+    const client: MinimalAnthropicClient = { messages: { create } };
+
+    const counts = new Map([
+      ["a", 1],
+      ["b", 5],
+      ["c", 1],
+    ]);
+    const { canonicalNameByOriginal, merges, groupVerification } = await canonicalizeConcepts(counts, {
+      embedder,
+      client,
+      neighborCount: 2,
+      sleep: noSleep,
+    });
+
+    expect(canonicalNameByOriginal.get("a")).toBe("b");
+    expect(canonicalNameByOriginal.get("c")).toBe("c"); // split back out, not merged with a/b
+    expect(merges).toEqual([{ canonical: "b", mergedFrom: ["a"] }]);
+    expect(groupVerification.groupsChecked).toBe(1);
+    expect(groupVerification.verified).toBe(1);
+    expect(groupVerification.failed).toBe(0);
+  });
+
+  it("falls back to splitting a group into singletons when verification fails after retries", async () => {
+    const embedder = fakeEmbedder({ a: [1, 0, 0], b: [0.99, 0.01, 0], c: [0.98, 0.02, 0] });
+    const create = vi.fn().mockImplementation(async (params: { tools: { name: string }[]; messages: { content: string }[] }) => {
+      if (params.tools[0]?.name === "verify_group") throw new Error("network error");
+      const lines = params.messages[0]!.content.split("\n").filter((l) => /^\d+\./.test(l));
+      return mergeMessage(lines.map((_, index) => ({ index, merge: true })));
+    });
+    const client: MinimalAnthropicClient = { messages: { create } };
+
+    const counts = new Map([
+      ["a", 1],
+      ["b", 1],
+      ["c", 1],
+    ]);
+    const { canonicalNameByOriginal, merges, groupVerification } = await canonicalizeConcepts(counts, {
+      embedder,
+      client,
+      neighborCount: 2,
+      maxRetriesPerBatch: 1,
+      sleep: noSleep,
+    });
+
+    expect(canonicalNameByOriginal.get("a")).toBe("a");
+    expect(canonicalNameByOriginal.get("b")).toBe("b");
+    expect(canonicalNameByOriginal.get("c")).toBe("c");
+    expect(merges).toEqual([]);
+    expect(groupVerification.failed).toBe(1);
   });
 
   it("returns empty results for no concepts, without calling the LLM", async () => {

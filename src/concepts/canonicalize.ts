@@ -35,6 +35,7 @@ export interface CanonicalizationResult {
   /** Every candidate pair the LLM actually ruled on (merge=true or false), for audit. */
   decisions: MergeDecision[];
   stats: CanonicalizationStats;
+  groupVerification: GroupVerificationStats;
 }
 
 /**
@@ -219,6 +220,118 @@ export async function confirmMergeCandidates(
   return { decisions, stats };
 }
 
+function buildGroupVerificationTool(): Anthropic.Tool {
+  return {
+    name: "verify_group",
+    description:
+      "Verify whether a proposed group of concept names are all truly the exact same concept, splitting into sub-groups if not.",
+    input_schema: {
+      type: "object",
+      properties: {
+        groups: {
+          type: "array",
+          items: { type: "array", items: { type: "string" } },
+        },
+      },
+      required: ["groups"],
+    },
+  };
+}
+
+function buildGroupVerificationPrompt(names: readonly string[]): string {
+  return `The following concept names were grouped together as the SAME concept, via a chain of pairwise similarity comparisons. Chained pairwise comparisons can be wrong: "A is the same as B" plus "B is the same as C" doesn't guarantee "A is the same as C" — A and C might never have been compared directly, and might actually be different concepts.
+
+Look at ALL of these names together and decide the correct final grouping: which ones are truly, 100% the exact same concept (a learner missing a card about one would be missing the exact same fact/rule as a learner missing a card about another), and which ones need to be split out as their own separate concept (or a smaller sub-group).
+
+Be strict — when in doubt, split rather than keep grouped.
+
+Names:
+${names.map((n) => `- "${n}"`).join("\n")}
+
+Return the final grouping as a list of groups, where each group is a list of the names that belong together. Every input name must appear in EXACTLY ONE output group — a name that doesn't truly match any other becomes its own group of size 1.`;
+}
+
+function validateGroupVerification(input: unknown, names: readonly string[]): string[][] {
+  if (typeof input !== "object" || input === null || !("groups" in input)) {
+    throw new Error("Invalid group verification: missing 'groups'");
+  }
+  const groups = (input as { groups: unknown }).groups;
+  if (!Array.isArray(groups)) throw new Error("Invalid group verification: 'groups' is not an array");
+
+  const seen = new Set<string>();
+  for (const group of groups) {
+    if (!Array.isArray(group)) throw new Error("Invalid sub-group: not an array");
+    for (const name of group) {
+      if (typeof name !== "string") throw new Error("Invalid name in sub-group");
+      if (!names.includes(name)) throw new Error(`Unknown name in verification result: ${name}`);
+      if (seen.has(name)) throw new Error(`Name appears in multiple sub-groups: ${name}`);
+      seen.add(name);
+    }
+  }
+  if (seen.size !== names.length) {
+    throw new Error(`Verification result missing some names (expected ${names.length}, got ${seen.size})`);
+  }
+
+  return groups as string[][];
+}
+
+export interface GroupVerificationStats {
+  groupsChecked: number;
+  verified: number;
+  /** Verification failed after retries; the group was conservatively split into singletons. */
+  failed: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * Re-examines a proposed transitive merge group (size > 2) as a whole,
+ * asking the LLM to confirm it or split it into smaller sub-groups — the
+ * fix for chained pairwise decisions producing an over-broad group (e.g.
+ * 7 unrelated verbs collapsing into one "Pretérito imperfeito" bucket
+ * because each was separately, and correctly in isolation, judged close to
+ * one shared neighbor). On unrecoverable failure, conservatively splits
+ * the group into singletons rather than keeping an unverified merge.
+ */
+async function verifyGroup(
+  names: readonly string[],
+  ctx: {
+    client: MinimalAnthropicClient;
+    model: string;
+    maxRetries: number;
+    sleep: (ms: number) => Promise<void>;
+    onUsage: (usage: { inputTokens: number; outputTokens: number }) => void;
+    onAttempt: () => void;
+  },
+): Promise<{ groups: string[][]; failed: boolean }> {
+  for (let attempt = 0; attempt <= ctx.maxRetries; attempt++) {
+    ctx.onAttempt();
+    try {
+      const message = await ctx.client.messages.create({
+        model: ctx.model,
+        max_tokens: 2048,
+        tools: [buildGroupVerificationTool()],
+        tool_choice: { type: "tool", name: "verify_group" },
+        messages: [{ role: "user", content: buildGroupVerificationPrompt(names) }],
+      });
+      ctx.onUsage({ inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
+
+      const toolUse = message.content.find(
+        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
+      );
+      if (!toolUse) throw new Error("Model response did not include a tool_use block");
+
+      const groups = validateGroupVerification(toolUse.input, names);
+      return { groups, failed: false };
+    } catch {
+      if (attempt < ctx.maxRetries) await ctx.sleep(1000 * 2 ** attempt);
+    }
+  }
+
+  return { groups: names.map((n) => [n]), failed: true };
+}
+
 export interface CanonicalizationOptions {
   embedder: TextEmbedder;
   client: MinimalAnthropicClient;
@@ -256,6 +369,7 @@ export async function canonicalizeConcepts(
       merges: [],
       decisions: [],
       stats: { candidatePairs: 0, batches: 0, calls: 0, inputTokens: 0, outputTokens: 0, failedPairs: [] },
+      groupVerification: { groupsChecked: 0, verified: 0, failed: 0, calls: 0, inputTokens: 0, outputTokens: 0 },
     };
   }
 
@@ -285,31 +399,70 @@ export async function canonicalizeConcepts(
     union(ia, ib);
   }
 
-  const groups = new Map<number, number[]>();
+  const transitiveGroups = new Map<number, number[]>();
   for (let i = 0; i < names.length; i++) {
     const root = find(i);
-    const group = groups.get(root);
+    const group = transitiveGroups.get(root);
     if (group) group.push(i);
-    else groups.set(root, [i]);
+    else transitiveGroups.set(root, [i]);
+  }
+
+  const model = options.model ?? DEFAULT_MODEL;
+  const maxRetriesPerBatch = options.maxRetriesPerBatch ?? 2;
+  const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+  const groupVerification: GroupVerificationStats = {
+    groupsChecked: 0,
+    verified: 0,
+    failed: 0,
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  };
+
+  const finalGroups: string[][] = [];
+  for (const indices of transitiveGroups.values()) {
+    const groupNames = indices.map((i) => names[i]!);
+
+    if (groupNames.length <= 2) {
+      finalGroups.push(groupNames);
+      continue;
+    }
+
+    groupVerification.groupsChecked++;
+    const verification = await verifyGroup(groupNames, {
+      client: options.client,
+      model,
+      maxRetries: maxRetriesPerBatch,
+      sleep,
+      onUsage: (usage) => {
+        groupVerification.inputTokens += usage.inputTokens;
+        groupVerification.outputTokens += usage.outputTokens;
+      },
+      onAttempt: () => groupVerification.calls++,
+    });
+
+    if (verification.failed) groupVerification.failed++;
+    else groupVerification.verified++;
+    finalGroups.push(...verification.groups);
   }
 
   const canonicalNameByOriginal = new Map<string, string>();
   const merges: ConceptMerge[] = [];
 
-  for (const indices of groups.values()) {
-    const groupNames = indices.map((i) => names[i]!);
-    groupNames.sort((a, b) => {
+  for (const groupNames of finalGroups) {
+    const sorted = [...groupNames].sort((a, b) => {
       const freqDiff = (conceptCounts.get(b) ?? 0) - (conceptCounts.get(a) ?? 0);
       return freqDiff !== 0 ? freqDiff : a.localeCompare(b);
     });
 
-    const canonical = groupNames[0]!;
-    for (const name of groupNames) canonicalNameByOriginal.set(name, canonical);
+    const canonical = sorted[0]!;
+    for (const name of sorted) canonicalNameByOriginal.set(name, canonical);
 
-    if (groupNames.length > 1) {
-      merges.push({ canonical, mergedFrom: groupNames.slice(1) });
+    if (sorted.length > 1) {
+      merges.push({ canonical, mergedFrom: sorted.slice(1) });
     }
   }
 
-  return { canonicalNameByOriginal, merges, decisions, stats };
+  return { canonicalNameByOriginal, merges, decisions, stats, groupVerification };
 }

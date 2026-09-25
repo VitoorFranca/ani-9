@@ -8,6 +8,14 @@ export type { MinimalAnthropicClient } from "./anthropic-client.js";
 
 export const DEFAULT_MODEL = "claude-haiku-4-5";
 const MAX_CONCEPTS_PER_CARD = 6;
+/**
+ * Bumped whenever buildExtractionPrompt's instructions change in a way that
+ * would produce different concepts for the same card text — folded into the
+ * cache key so a prompt change can't silently serve stale cached results
+ * (e.g. "v1" produced compound labels like "Pretérito imperfeito (acabava)";
+ * "v2" requires atomic, single-idea concepts instead).
+ */
+const EXTRACTION_PROMPT_VERSION = "v2-atomic";
 
 export interface ExtractableCard {
   cardId: number;
@@ -57,9 +65,13 @@ function buildExtractionPrompt(cards: readonly ExtractableCard[], knownConcepts:
 Aim for a level of granularity useful for diagnosing WHY a specific card might be answered wrong later — not a broad subject label (e.g. "English", "programming", "history"), and not something so narrow it only ever applies to this one card's exact wording. A good concept is reusable: the same word, grammar rule, formula, date, or fact, named consistently so it can be recognized across different cards.
 
 Rules:
+- Each concept must be ATOMIC: it expresses exactly ONE idea — either a grammar/pattern rule, OR a single specific vocabulary item — never both combined into one label, and never a bare parenthetical example tacked onto a rule name. If a card involves both a grammar rule and a specific word/fact, extract them as TWO separate concepts.
+  - BAD: "Pretérito imperfeito (acabava)" (mixes a tense rule with one specific verb) — GOOD: "Pretérito imperfeito" and, separately, "verbo acabar".
+  - BAD: "Vocabulário: fazendeiro, esposa" (bundles two unrelated words) — GOOD: "fazendeiro" and "esposa" as two separate concepts.
+  - BAD: "Adjetivo predicativo (bonita)" — GOOD: "adjetivo predicativo" (grammar) and "bonita" (vocabulary), separately.
 - If a concept you're about to name is a close match for one already used in this deck (listed below), reuse that EXACT name instead of creating a near-duplicate.
 - "weight" is a number in (0, 1]: how central this concept is to answering the card correctly. 1.0 = the entire card hinges on it; lower values are supporting/secondary concepts.
-- Return between 1 and ${MAX_CONCEPTS_PER_CARD} concepts per card (typically 2-4). Never exceed ${MAX_CONCEPTS_PER_CARD}.
+- Return between 1 and ${MAX_CONCEPTS_PER_CARD} concepts per card. Atomic decomposition often means more concepts than a bundled label would, but never exceed ${MAX_CONCEPTS_PER_CARD}.
 - Name concepts in the same language as the card's own content, not translated into English.
 
 Concepts already used in this deck (reuse when applicable):
@@ -168,9 +180,10 @@ export async function extractConcepts(
     failedBatches: [],
   };
 
+  const cacheKeyModel = `${model}::${EXTRACTION_PROMPT_VERSION}`;
   const pending: (ExtractableCard & { hash: string })[] = [];
   for (const card of cards) {
-    const hash = hashCardContent(model, card.text);
+    const hash = hashCardContent(cacheKeyModel, card.text);
     const cached = await cache.get(hash);
     if (cached) {
       conceptsByCard.set(card.cardId, cached);

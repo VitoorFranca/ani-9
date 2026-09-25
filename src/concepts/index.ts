@@ -11,6 +11,7 @@ export type {
   ConceptCandidatePair,
   ConceptMerge,
   ConfirmMergesOptions,
+  GroupVerificationStats,
   MergeDecision,
 } from "./canonicalize.js";
 export { computeIdfWeights } from "./weights.js";
