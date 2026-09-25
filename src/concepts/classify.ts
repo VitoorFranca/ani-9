@@ -12,11 +12,11 @@ function buildClassifyPrompt(cards: readonly ClassifiableCard[], fixedList: read
     .map((c) => `Cartão ${c.cardId} — PERGUNTA: ${c.front} — RESPOSTA: ${c.back}`)
     .join("\n");
 
-  return `Você tem uma lista fixa de conceitos gramaticais/estruturais (numerados abaixo) e uma lista de flashcards de um aplicativo de repetição espaçada.
+  return `Você tem uma lista fixa de conceitos (numerados abaixo) e uma lista de flashcards de um aplicativo de repetição espaçada.
 
 Para cada cartão, escolha APENAS os conceitos da lista que esse cartão exige para ser respondido corretamente — pelos números da lista. Um cartão pode não exigir NENHUM conceito da lista (retorne uma lista vazia nesse caso): isso é esperado e correto quando nenhum item da lista se aplica, não force uma escolha.
 
-Não invente conceitos novos — escolha apenas entre os numerados abaixo. Instrução central: julgue pelo CONTEÚDO ESTUDADO no cartão (o inglês da pergunta), não pelo idioma da tradução de apoio.
+Não invente conceitos novos — escolha apenas entre os numerados abaixo. Instrução central: julgue pelo CONTEÚDO ESTUDADO no cartão, não pelo idioma em que a pergunta ou a resposta estão escritas — isso vale mesmo quando a resposta é apenas uma tradução de apoio.
 
 Lista de conceitos:
 ${listLines}

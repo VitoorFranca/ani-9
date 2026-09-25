@@ -64,20 +64,17 @@ function buildFixedListPrompt(cards: readonly SampleCard[]): string {
     .map((c) => `Cartão ${c.cardId} — PERGUNTA: ${c.front} — RESPOSTA: ${c.back}`)
     .join("\n");
 
-  return `Você está analisando uma amostra de flashcards de um aplicativo de repetição espaçada, para construir uma LISTA FIXA e reutilizável de conceitos, usada depois para classificar TODOS os cartões do baralho.
+  return `Você está analisando uma amostra de flashcards de um aplicativo de repetição espaçada, sobre qualquer assunto, para construir uma LISTA FIXA e reutilizável de conceitos, usada depois para classificar TODOS os cartões do baralho.
 
-Instrução central: descreva o CONTEÚDO ESTUDADO — nunca o idioma em que a pergunta ou a resposta estão escritas. Estes cartões têm uma frase em inglês como pergunta e uma tradução em português apenas como apoio à compreensão; o conteúdo estudado é o INGLÊS, não a gramática do português da tradução.
+Instrução central: descreva o CONTEÚDO ESTUDADO — nunca o idioma em que a pergunta ou a resposta estão escritas. Isso vale mesmo quando a resposta é apenas uma tradução de apoio: o conteúdo estudado é o que a pergunta ensina, não o idioma em que a tradução foi escrita.
 
-NÃO inclua itens de vocabulário (palavras individuais como "hair" ou "agree") — isso já é coberto por uma regra automática separada. Foque em:
-- padrões gramaticais (tempos verbais, estruturas de frase, uso de preposições/conjunções, formação de perguntas/negativas)
-- expressões idiomáticas ou phrasal verbs COMO UM TODO no sentido que carregam (ex.: "called off" no sentido de "cancelar"), não como uma junção de palavras soltas
-- construções sintáticas recorrentes
+NÃO inclua itens de vocabulário (palavras individuais) — isso já é coberto por uma regra automática separada. Foque em padrões, regras, expressões ou fatos que se repetem entre cartões — o que conta como "padrão" depende do assunto do baralho (pode ser uma regra gramatical, uma expressão idiomática completa, uma fórmula, um princípio, um tipo de construção, uma categoria de fato, etc.). Uma expressão ou frase feita conta como UM conceito quando o sentido do todo é o que importa (ex.: "called off" no sentido de "cancelar"), não como uma junção de palavras soltas.
 
 Cada conceito deve ser ATÔMICO: uma única ideia por conceito, sem exemplos entre parênteses grudados no nome.
-  ERRADO: "past simple (called off)" (mistura a regra gramatical com uma expressão específica)
-  CERTO: "past simple" como um conceito, e "phrasal verb: called off" como outro conceito separado (se a expressão em si for relevante o bastante para aparecer em múltiplos cartões).
+  ERRADO: "pretérito perfeito composto (tinha viajado)" (mistura uma regra com um caso específico) — CERTO: "pretérito perfeito composto" como um conceito, e o caso específico como outro, se for relevante o bastante para aparecer em múltiplos cartões.
+  ERRADO: "mecanismo de ação da metformina (reduz produção hepática de glicose)" — CERTO: dois conceitos separados, um para o mecanismo geral e outro para o efeito específico, se ambos recorrerem.
 
-Critério de granularidade — use-o para decidir quando DIVIDIR uma categoria ampla: dois conceitos são DIFERENTES se uma pessoa pode saber um sem saber o outro. Categorias amplas como "Phrasal Verbs" ou "Expressões Idiomáticas" quase sempre precisam ser divididas nos padrões específicos que os cartões realmente exigem (ex.: em vez de "Phrasal Verbs", use conceitos como "phrasal verb: called off", "phrasal verb: give up", cada um só se aparecer em múltiplos cartões).
+Critério de granularidade — use-o para decidir quando DIVIDIR uma categoria ampla: dois conceitos são DIFERENTES se uma pessoa pode saber um sem saber o outro. Categorias amplas ("Phrasal Verbs", "Funções em Python", "Doenças cardiovasculares") quase sempre precisam ser divididas nos padrões específicos que os cartões realmente exigem (ex.: em vez de "Phrasal Verbs" sozinho, "phrasal verb: called off", "phrasal verb: give up", cada um só se aparecer em múltiplos cartões).
 
 Requisitos da lista final:
 - Entre 30 e 80 conceitos.
