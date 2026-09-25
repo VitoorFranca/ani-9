@@ -50,7 +50,7 @@ Antes da ablação, testamos se o resultado inicial era só recalibração gené
 
 ## Custo
 
-Abordagem da lista fixa: 25 chamadas ao Gemini 3.1 Flash-Lite, **US$0,065 total**. Toda a ablação e os controles (7 variantes × grid search × bootstrap × 1000 permutações cada) rodaram localmente, sem custo adicional de API. Tentativas anteriores descartadas: ~US$1,13 em extração aberta via Anthropic Haiku (CIMV.apkg).
+Abordagem da lista fixa: 25 chamadas ao Gemini 3.1 Flash-Lite, **US$0,065 total**. Toda a ablação e os controles (7 variantes × grid search × bootstrap × 1000 permutações cada) rodaram localmente, sem custo adicional de API. Tentativas anteriores descartadas: ~US$1,71 em extração aberta via Anthropic Haiku no CIMV.apkg (US$1,13 até o teste de fumaça + US$0,58 na última rodada de correções, com atomização/pós-processamento).
 
 ## Limitações conhecidas
 

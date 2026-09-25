@@ -144,7 +144,8 @@
   "cost": {
     "totalGeminiCallsThisApproach": 25,
     "totalCostUsdThisApproach": 0.06496,
-    "note": "ablação e controles rodaram inteiramente localmente, sem chamadas de API, reaproveitando a classificação já em cache. Custo cumulativo de tentativas anteriores: ~US$1.13 em extração aberta pelo Anthropic no CIMV.apkg (todas as iterações), ~US$0.004 na geração da lista fixa descartada."
+    "note": "ablação e controles rodaram inteiramente localmente, sem chamadas de API, reaproveitando a classificação já em cache. Custo cumulativo de tentativas anteriores: ~US$1.71 em extração aberta pelo Anthropic no CIMV.apkg (US$1.13 até o teste de fumaça + US$0.58 na última rodada de correções), ~US$0.004 na geração da lista fixa descartada.",
+    "anthropicCimvCostBreakdownUsd": { "throughSmokeTest": 1.13, "finalCorrectionRound": 0.58, "total": 1.71 }
   },
   "knownLimitations": [
     "Limitação principal: este baralho é majoritariamente composto de itens isolados (cartões de vocabulário de palavra única, sem contexto compartilhado com outros cartões) — há pouco conhecimento genuinamente compartilhado entre cartões para uma camada de conceitos explorar. Os dois notetypes de frase (Phrasal Verbs/Idiomatic Expressions, ~46% dos cartões elegíveis) têm mais estrutura compartilhada, mas mesmo lá o efeito encontrado não sobreviveu aos controles como conteúdo genuíno.",
