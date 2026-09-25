@@ -34,4 +34,16 @@ describe("extractVocabularyConcepts", () => {
   it("returns an empty array for text with no words", () => {
     expect(extractVocabularyConcepts("123 !!!")).toEqual([]);
   });
+
+  it("keeps function words by default", () => {
+    const concepts = extractVocabularyConcepts("the dog");
+    expect(concepts.some((c) => c.name === "the")).toBe(true);
+  });
+
+  it("drops function words when excludeFunctionWords is set", () => {
+    const concepts = extractVocabularyConcepts("the dog and the cat", { excludeFunctionWords: true });
+    expect(concepts.some((c) => c.name === "the")).toBe(false);
+    expect(concepts.some((c) => c.name === "and")).toBe(false);
+    expect(concepts.map((c) => c.name).sort()).toEqual(["cat", "dog"]);
+  });
 });
