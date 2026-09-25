@@ -36,6 +36,27 @@ describe("buildNormalizedCards", () => {
     expect(card?.back).toBe("Image Header Comments");
   });
 
+  it("skips a leading id-only field (no letters) and an image field to find the real front content", () => {
+    // Reproduces data/English.apkg's "4000 EEW Extra" note type exactly:
+    // field 0 is a bare sequence id, field 1 an image, field 2 the actual word.
+    const col = collection({
+      notes: [
+        {
+          id: 1,
+          guid: "g",
+          modelId: 1,
+          tags: [],
+          fields: ["1_1_1", '<img src="hair.jpg">', "hair", "[hɛə]", "[sound:hair1.wav]"],
+        },
+      ],
+      cards: [{ id: 10, noteId: 1, deckId: 1, ord: 0 }],
+    });
+    const [card] = buildNormalizedCards(col);
+    expect(card?.front).toBe("hair");
+    expect(card?.back).toContain("1_1_1");
+    expect(card?.back).toContain("[hɛə]");
+  });
+
   it("marks a card contentless when only media remains after normalization", () => {
     const col = collection({
       notes: [{ id: 1, guid: "g", modelId: 1, tags: [], fields: ['<img src="a.png">', "[sound:x.mp3]"] }],
