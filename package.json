@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "cli": "tsx src/cli.ts"
+    "analyze:english": "tsx scripts/analyze-english-concept-model.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
