@@ -26,7 +26,12 @@ export interface EmbedResult {
   cacheHits: number;
 }
 
-export class Embedder {
+/** What consumers (e.g. canonicalize.ts) actually need — lets tests mock this without loading the real model. */
+export interface TextEmbedder {
+  embed(texts: readonly string[], kind: EmbeddingKind): Promise<EmbedResult>;
+}
+
+export class Embedder implements TextEmbedder {
   private readonly model: string;
   private readonly cache: EmbeddingCache;
   private readonly modelCacheDir: string | undefined;
