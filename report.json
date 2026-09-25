@@ -1,8 +1,8 @@
 {
   "phase": 1,
   "question": "A camada de conceitos prevê a recordação do usuário melhor do que o FSRS puro, nos dados reais dele?",
-  "verdict": "evidência sugestiva",
-  "verdictRule": "Classificado como 'evidência sugestiva' (não confirmado) porque o bootstrap por cartão contra o FSRS ainda cruza zero, mesmo com p<0.05 no teste de permutação.",
+  "verdict": "sem evidência de transferência por conteúdo neste baralho",
+  "verdictSummary": "O único efeito estatisticamente significativo encontrado (bootstrap fora de zero + teste de permutação com p<0.05) é explicado por um controle trivial — um rótulo por notetype, sem palavras, sem LLM, sem qualquer noção de conceito compartilhado. A lista fixa de conceitos gerada por LLM não teve efeito (pior que o FSRS, indistinguível de ruído). O vocabulário por regra pareceu ajudar, mas seu efeito é majoritariamente explicado pelo notetype, não por conteúdo lexical: palavras funcionais (the, is, to...) funcionam como um proxy indireto de 'este cartão é de frase ou de palavra isolada', não como sinal semântico.",
   "deck": {
     "file": "data/English.apkg",
     "totalCards": 13523,
@@ -10,6 +10,7 @@
     "totalRevlog": 18953,
     "keptReviews": 5157,
     "cardToNoteRatio": 1.0,
+    "noteTypes": 4,
     "periodNote": "Resets em massa (type=4, factor=0) em 13523 entradas, todos dentro de uma janela de 14s — artefato de importação/geração do baralho, não ação manual do usuário."
   },
   "pipeline": {
@@ -33,16 +34,16 @@
       },
       {
         "name": "lista fixa de conceitos (Gemini 3.1 Flash-Lite, classificação em conjunto fechado) + vocabulário por regra",
-        "outcome": "adotada — evidência sugestiva de melhora",
-        "notes": "elimina o problema de canonicalização por construção: a lista é fixa e revisada por humano antes do uso; o LLM só escolhe entre itens existentes, nunca cria novos."
+        "outcome": "descartada após ablação — a lista fixa não contribui em nada; o vocabulário se explica por notetype, não por conteúdo",
+        "notes": "eliminou o problema de canonicalização por construção (a lista é fixa e revisada por humano; o LLM só escolhe entre itens existentes), mas a ablação mostrou que isso não importava — a lista em si não carregava sinal."
       }
     ],
     "fixedListGeneration": {
       "model": "gemini-3.1-flash-lite",
       "sampleSize": 100,
-      "samplingRule": "prioriza cartões com front multi-palavra (frases) sobre cartões de palavra única, detectado estruturalmente (não por nome de notetype)",
       "conceptCount": 22,
-      "reviewedByUser": true
+      "reviewedByUser": true,
+      "outcome": "descartada — ver ablação"
     },
     "classification": {
       "model": "gemini-3.1-flash-lite",
@@ -63,91 +64,90 @@
     },
     "model": {
       "type": "GraphBayesianModel genérico (spec original per-concept adaptado)",
-      "linking": "card -> nomes de conceitos (lista fixa + vocabulário), sem self-link",
+      "linking": "card -> nomes de conceitos, sem self-link",
       "hyperparameters": ["priorVariance", "driftPerDay", "lambda"],
       "lambdaSafety": "lambda=0 zera todos os pesos -> pass-through exato do FSRS; garante que a busca em grade nunca piora o baseline no treino",
       "trainTestSplit": "70/30 cronológico global, conforme Fase 1"
     }
   },
-  "metrics": {
-    "allCards": {
-      "n": 1095,
-      "constant": { "logLoss": 0.2859, "auc": 0.5, "calibRmse": 0.0223 },
-      "fsrsOptimized": { "logLoss": 0.2608, "auc": 0.7430, "calibRmse": 0.0369 },
-      "conceptsWithSameNote": { "logLoss": 0.2589, "auc": 0.7609, "calibRmse": 0.0653 },
-      "conceptsWithoutSameNote": { "logLoss": 0.2576, "auc": 0.7642, "calibRmse": 0.0679 },
-      "bootstrapVsFsrs": {
-        "withSameNote": { "meanDelta": 0.0019, "ci95": [-0.0065, 0.0091] },
-        "withoutSameNote": { "meanDelta": 0.0031, "ci95": [-0.0086, 0.0124] }
-      }
-    },
-    "crossNoteCardsOnly": {
-      "n": 532,
-      "note": "cartões com >=1 conceito que liga pelo menos 2 notas distintas (exclui conceitos de vocabulário raro/único)",
-      "constant": { "logLoss": 0.1493, "auc": 0.5, "calibRmse": 0.0270 },
-      "fsrsOptimized": { "logLoss": 0.1603, "auc": 0.6937, "calibRmse": 0.0650 },
-      "fsrsRecalibrated": { "logLoss": 0.1565, "auc": 0.6937, "calibRmse": 0.0605, "globalBias": 0.070 },
-      "conceptsWithSameNote": { "logLoss": 0.1461, "auc": 0.7280, "calibRmse": 0.0809 },
-      "conceptsWithoutSameNote": { "logLoss": 0.1538, "auc": 0.7373, "calibRmse": 0.1023 },
-      "bootstrapVsFsrs": {
-        "withSameNote": { "meanDelta": 0.0141, "ci95": [-0.0027, 0.0285] },
-        "withoutSameNote": { "meanDelta": 0.0062, "ci95": [-0.0183, 0.0260] }
-      },
-      "bootstrapVsFsrsRecalibrated": {
-        "withSameNote": { "meanDelta": 0.0102, "ci95": [-0.0066, 0.0242] }
-      }
-    }
+  "primaryMetrics": {
+    "cut": "cartões com >=1 conceito ligando notas distintas (n=532), definido pelo modelo combinado original",
+    "fsrsOptimized": { "logLoss": 0.1603, "auc": 0.6937 },
+    "fsrsRecalibrated": { "logLoss": 0.1565, "globalBias": 0.070, "note": "recalibração de viés único não explica os ganhos abaixo" }
   },
-  "controls": {
-    "recalibration": {
-      "description": "FSRS + único ajuste de viés global (logit), ajustado no treino por busca em grade",
-      "purpose": "testar se o ganho é só recalibração genérica de FSRS mal calibrado",
-      "result": "recalibração sozinha melhora pouco (0.1603 -> 0.1565); modelo de conceitos ainda melhor (0.1461) mesmo contra o FSRS recalibrado",
-      "conclusion": "ganho não explicado por recalibração genérica"
-    },
-    "permutation": {
-      "description": "conceitos embaralhados entre cartões (preservando quantos cada cartão tem e a frequência global de cada conceito), refazendo a MESMA busca em grade de priorVariance/driftPerDay/lambda no treino a cada permutação",
-      "iterations": 1000,
-      "realLogLoss": 0.1461,
-      "permutedDistribution": {
-        "mean": 0.1700,
-        "sd": 0.0079,
-        "min": 0.1600,
-        "max": 0.1972,
-        "p1": 0.1603,
-        "p5": 0.1603,
-        "p25": 0.1616,
-        "p50": 0.1692,
-        "p75": 0.1761,
-        "p95": 0.1833,
-        "p99": 0.1889
+  "ablation": {
+    "protocol": "para cada variante: busca em grade (priorVariance, driftPerDay, lambda) só no treino; avaliação no recorte cross-note fixo (n=532); bootstrap por cartão contra FSRS otimizado; 1000 permutações da atribuição cartão->conceito, cada uma refazendo a MESMA busca em grade no treino (não reaproveita os hiperparâmetros do modelo real)",
+    "variants": [
+      {
+        "name": "1. Só lista fixa (22 conceitos, LLM)",
+        "coverage": "238/926 cartões elegíveis, 238/532 no recorte",
+        "logLoss": 0.1709,
+        "bootstrapVsFsrs": { "meanDelta": -0.0110, "ci95": [-0.0307, 0.0057] },
+        "permutation": { "empiricalP": 0.9660, "beatingOrTyingReal": 966, "iterations": 1000 },
+        "conclusion": "pior que o FSRS; indistinguível de embaralhamento aleatório (96.6% das permutações empatam ou superam) — sem sinal"
       },
-      "permutationsBeatingOrTyingReal": 0,
-      "empiricalP": 0.001,
-      "conclusion": "o valor real fica abaixo de TODAS as 1000 permutações (inclusive o mínimo); o conteúdo específico dos conceitos, não apenas a flexibilidade do modelo, explica o ganho"
-    }
+      {
+        "name": "2. Só vocabulário (com palavras funcionais)",
+        "coverage": "926/926 cartões elegíveis, 493/532 no recorte",
+        "logLoss": 0.1444,
+        "bootstrapVsFsrs": { "meanDelta": 0.0158, "ci95": [0.0006, 0.0289] },
+        "permutation": { "empiricalP": 0.001, "beatingOrTyingReal": 0, "iterations": 1000 },
+        "conclusion": "único resultado com bootstrap fora de zero E permutação significativa — mas ver o controle de notetype abaixo, que o supera com um sinal ainda mais trivial"
+      },
+      {
+        "name": "3. Vocabulário sem palavras funcionais",
+        "coverage": "924/926 cartões elegíveis, 491/532 no recorte",
+        "logLoss": 0.1550,
+        "bootstrapVsFsrs": { "meanDelta": 0.0052, "ci95": [-0.0047, 0.0130] },
+        "permutation": { "empiricalP": 0.001, "beatingOrTyingReal": 0, "iterations": 1000 },
+        "conclusion": "bootstrap cruza zero — sem as palavras funcionais, o vocabulário de conteúdo sozinho não é significativo"
+      },
+      {
+        "name": "4. Lista fixa + vocabulário sem palavras funcionais",
+        "coverage": "924/926 cartões elegíveis, 491/532 no recorte",
+        "logLoss": 0.1559,
+        "bootstrapVsFsrs": { "meanDelta": 0.0043, "ci95": [-0.0074, 0.0134] },
+        "permutation": { "empiricalP": 0.001, "beatingOrTyingReal": 0, "iterations": 1000 },
+        "conclusion": "bootstrap cruza zero — adicionar a lista fixa não recupera o efeito perdido ao remover palavras funcionais"
+      },
+      {
+        "name": "5. Controle: nó global único (todo cartão compartilha 1 nó artificial)",
+        "coverage": "926/926 cartões elegíveis, 532/532 no recorte",
+        "logLoss": 0.1586,
+        "bootstrapVsFsrs": { "meanDelta": 0.0017, "ci95": [-0.0060, 0.0093] },
+        "permutation": "não aplicável (todo cartão tem a mesma atribuição; embaralhar não muda o modelo)",
+        "conclusion": "testa se o vocabulário é só recalibração global variável no tempo — não bate o vocabulário completo (0.1586 vs 0.1444), então múltiplos canais por palavra fazem diferença real sobre um único canal"
+      },
+      {
+        "name": "6. Controle: nó por notetype (4 valores possíveis, sem palavras)",
+        "coverage": "926/926 cartões elegíveis, 493/532 no recorte",
+        "logLoss": 0.1428,
+        "bootstrapVsFsrs": { "meanDelta": 0.0175, "ci95": [0.0024, 0.0309] },
+        "permutation": { "empiricalP": 0.001, "beatingOrTyingReal": 0, "iterations": 1000 },
+        "conclusion": "MELHOR resultado de toda a investigação, e sem usar nenhuma palavra ou conceito — só a identidade do notetype. Explica a heterogeneidade de dificuldade entre os 4 notetypes do baralho, algo que o FSRS otimizado (parâmetros únicos para o baralho todo) não captura sozinho."
+      },
+      {
+        "name": "7. Controle: nó por faixa de tamanho do front (1 palavra / 2-4 / 5+)",
+        "coverage": "926/926 cartões elegíveis, 493/532 no recorte",
+        "logLoss": 0.1505,
+        "bootstrapVsFsrs": { "meanDelta": 0.0096, "ci95": [-0.0146, 0.0274] },
+        "permutation": { "empiricalP": 0.001, "beatingOrTyingReal": 0, "iterations": 1000 },
+        "conclusion": "bootstrap cruza zero — proxy mais fraco de notetype que o vocabulário com funcionais, mas ainda pior que o notetype exato"
+      }
+    ],
+    "interpretation": "Ordenando por bootstrap: notetype (6) > vocabulário-com-funcionais (2) > global único (5) ~ tamanho (7) ~ vocabulário-sem-funcionais (3) ~ lista+vocab-sem-funcionais (4) > lista fixa sozinha (1, pior que FSRS). O único controle com bootstrap E permutação limpos ao mesmo tempo é o notetype — e ele não depende de nenhuma palavra, conceito ou conteúdo do cartão. Palavras funcionais aparecem quase exclusivamente nos notetypes de frase (Phrasal Verbs/Idiomatic Expressions), então o resultado do vocabulário-com-funcionais é consistente com estar herdando o mesmo sinal do notetype por via indireta, não descobrindo conteúdo compartilhado entre cartões."
   },
-  "fixedListConcepts": [
-    "phrasal verb: get away with", "phrasal verb: pass away", "phrasal verb: sleep over",
-    "phrasal verb: call off", "phrasal verb: pull together", "phrasal verb: come up with",
-    "phrasal verb: find out", "phrasal verb: back up", "phrasal verb: dress up",
-    "phrasal verb: go back", "phrasal verb: keep on", "phrasal verb: sober up",
-    "expressão idiomática: take for granted", "expressão idiomática: long shot",
-    "expressão idiomática: when it comes to", "expressão idiomática: so far, so good",
-    "expressão idiomática: not my cup of tea", "expressão idiomática: can't help but",
-    "expressão idiomática: at all", "expressão idiomática: go against",
-    "expressão idiomática: I'll have you know", "expressão idiomática: might as well"
-  ],
   "cost": {
     "totalGeminiCallsThisApproach": 25,
     "totalCostUsdThisApproach": 0.06496,
-    "note": "custo cumulativo de tentativas anteriores (Anthropic + Gemini list generation) não incluído aqui; ver histórico de commits para o valor gasto em cada abordagem descartada (~US$1.13 em extração aberta pelo Anthropic no CIMV.apkg, ~US$0.004 na geração da lista fixa)."
+    "note": "ablação e controles rodaram inteiramente localmente, sem chamadas de API, reaproveitando a classificação já em cache. Custo cumulativo de tentativas anteriores: ~US$1.13 em extração aberta pelo Anthropic no CIMV.apkg (todas as iterações), ~US$0.004 na geração da lista fixa descartada."
   },
   "knownLimitations": [
-    "Lista fixa gerada de uma amostra de 100 cartões, todos de notetypes com frases (Phrasal Verbs/Idiomatic Expressions) — não cobre gramática de tempos verbais nem generaliza a outros idiomas/assuntos sem nova geração.",
-    "Apenas 532/926 cartões elegíveis têm algum conceito que liga notas distintas — o efeito medido se concentra num subconjunto minoritário do baralho.",
-    "Razão cartão:nota = 1.00 neste baralho (sem cartões-irmãos) — a distinção 'same-note-only' aqui equivale a 'conceito raro (1 nota só)', não a um artefato de irmãos triviais; pode se comportar diferente em baralhos com cloze/reversos.",
-    "Bootstrap por cartão (reamostragem da incerteza da amostra observada) não cruza fora de zero, mesmo com o teste de permutação (mede se o conteúdo importa vs. aleatório) fortemente significativo — por isso o veredito é 'evidência sugestiva', não confirmada.",
+    "Limitação principal: este baralho é majoritariamente composto de itens isolados (cartões de vocabulário de palavra única, sem contexto compartilhado com outros cartões) — há pouco conhecimento genuinamente compartilhado entre cartões para uma camada de conceitos explorar. Os dois notetypes de frase (Phrasal Verbs/Idiomatic Expressions, ~46% dos cartões elegíveis) têm mais estrutura compartilhada, mas mesmo lá o efeito encontrado não sobreviveu aos controles como conteúdo genuíno.",
+    "O resultado significativo (notetype) sugere que o ganho real disponível neste baralho é heterogeneidade de dificuldade ENTRE sub-decks/notetypes — um problema mais simples que 'quais conceitos um cartão compartilha com outro', e que nem exige uma camada de conceitos: FSRS com parâmetros por notetype (em vez de um conjunto único para o baralho todo) provavelmente já capturaria a maior parte desse ganho.",
+    "Razão cartão:nota = 1.00 neste baralho (sem cartões-irmãos) — não testado em baralho com cloze/reversos, onde a estrutura de compartilhamento entre cartões é diferente.",
+    "A lista fixa de conceitos por LLM (o componente mais caro e complexo da Fase 1) não teve efeito neste baralho — não se sabe se isso é uma falha do método (amostra de 100 cartões, foco em phrasal verbs/idiomas) ou se decks com mais estrutura gramatical/conceitual compartilhada se beneficiariam mais.",
+    "Confirmação da hipótese da Fase 1 exigiria repetir a variante mais promissora (vocabulário ou notetype) em dados novos (outro baralho, ou mais reviews do mesmo baralho) — os resultados atuais vêm de uma única amostra de 532 cartões avaliáveis, insuficiente para confirmação independente do teste de permutação.",
     "Elapsed-days do FSRS usa diferença de dia-calendário UTC (piso), não o horário exato de virada de dia configurado no Anki do usuário — aproximação já assumida desde o módulo fsrs."
   ]
 }

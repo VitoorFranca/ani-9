@@ -2,93 +2,61 @@
 
 **Pergunta da Fase 1:** a camada de conceitos prevê a recordação do usuário melhor do que o FSRS puro, nos dados reais dele?
 
-**Veredito: evidência sugestiva.** Não confirmado — o bootstrap por cartão contra o FSRS ainda cruza zero, mesmo com o teste de permutação (mais direto e mais rigoroso) fortemente significativo (p≈0.001, 1000 permutações). Ver [Controles](#controles) e [Como este veredito foi decidido](#como-este-veredito-foi-decidido).
+**Veredito: sem evidência de transferência por conteúdo neste baralho.** O único efeito estatisticamente significativo encontrado é explicado por um controle trivial — o notetype do cartão, sem palavras, sem LLM, sem qualquer noção de conceito compartilhado. Ver [Ablação e controles](#ablação-e-controles).
 
 ## Resumo do baralho
 
-`data/English.apkg`: 13.523 cartões totais, **926 elegíveis** (revisados e com conteúdo). 18.953 entradas de revlog brutas, **5.157 revisões mantidas** após o filtro (73% descartadas — 13.523 delas são resets em massa, `type=4/factor=0`, todos dentro de uma janela de 14 segundos, um artefato de importação do baralho, não ações manuais do usuário). Razão cartão:nota = 1.00 (sem cartões-irmãos neste baralho).
+`data/English.apkg`: 13.523 cartões totais, **926 elegíveis** (revisados e com conteúdo), distribuídos em 4 notetypes (Phrasal Verbs, Idiomatic Expressions, 4000 EEW, 4000 EEW Extra). 18.953 entradas de revlog brutas, **5.157 revisões mantidas** após o filtro (13.523 resets em massa, todos numa janela de 14s — artefato de importação, não ação do usuário). Razão cartão:nota = 1.00 (sem cartões-irmãos).
 
 ## O caminho até aqui
 
-Três abordagens foram tentadas para a camada de conceitos, nessa ordem:
+Três abordagens foram tentadas para a camada de conceitos:
 
-1. **Extração aberta por LLM (Anthropic Haiku) + canonicalização por similaridade de embedding.** Abandonada depois de várias rodadas de correção real: rótulos compostos (gramática e vocabulário misturados no mesmo nome), colapso da canonicalização por limiar fixo (0.88) — calibrado contra pares reais, nenhum limiar separa corretamente sinônimos verdadeiros de pares não relacionados — e, mesmo depois de consertar isso com verificação de grupo e divisão determinística de rótulos, a extração continuou nomeando a gramática do português da tradução em vez do inglês estudado, seu erro mais persistente.
-2. **Modelo de vizinhos por similaridade local** (embeddings + BM25, sem LLM). A normalização de peso por linha inflava artificialmente a confiança em vizinhos fracos (corrigida com escala absoluta + parâmetros τ/λ), mas mesmo corrigido, nenhuma das 3 variantes (embedding, BM25, média) superou o FSRS otimizado com significância no teste — resultado negativo, descartado.
-3. **Lista fixa de conceitos + classificação em conjunto fechado (Gemini 3.1 Flash-Lite)** + vocabulário por regra determinística. Esta é a abordagem adotada: elimina o problema de canonicalização por construção — a lista de conceitos é gerada uma vez, revisada por humano, e o LLM só escolhe entre itens já existentes para cada cartão (pode escolher nenhum), nunca cria conceitos novos.
+1. **Extração aberta por LLM (Anthropic Haiku) + canonicalização por embedding.** Abandonada: rótulos compostos, colapso da canonicalização por limiar fixo, e persistência do erro de nomear a gramática da tradução em vez do conteúdo estudado.
+2. **Modelo de vizinhos por similaridade local** (embeddings + BM25, sem LLM). Corrigido um bug real de escala de peso, mas nenhuma variante superou o FSRS com significância — descartado.
+3. **Lista fixa de conceitos (Gemini 3.1 Flash-Lite) + vocabulário por regra.** Resolveu o problema de canonicalização por construção (lista fixa revisada por humano, LLM só classifica em conjunto fechado). Pareceu funcionar inicialmente — mas a ablação abaixo mostra que não funcionava pelo motivo certo.
 
-## A abordagem final
+## Resultado inicial (antes da ablação)
 
-- **Lista fixa** (22 conceitos): gerada a partir de uma amostra de 100 cartões priorizando frases (Phrasal Verbs / Idiomatic Expressions), com critério de granularidade explícito ("dois conceitos são diferentes se alguém pode saber um sem saber o outro"), exigindo pelo menos 2 exemplos citados por conceito, validados contra a amostra real. Revisada e aprovada antes do uso.
-- **Vocabulário** (1.528 conceitos): cada palavra distinta do `front` de um cartão vira um conceito, por regra, sem LLM.
-- **Classificação**: para cada um dos 926 cartões elegíveis, o Gemini escolhe quais dos 22 conceitos da lista fixa se aplicam (pode escolher nenhum) — 24 chamadas, 0 falhas, custo real **US$0,065**.
-- **Modelo**: adaptação genérica do modelo bayesiano online da especificação original — em vez de ligar um cartão aos seus "conceitos" com pesos de centralidade, liga um cartão diretamente aos nomes dos conceitos que ele tem (lista fixa + vocabulário), sem peso de auto-ligação. Com λ=0, o modelo é um pass-through exato do FSRS (testado); a busca em grade (`priorVariance`, `driftPerDay`, `λ`) roda só no treino e nunca pode piorar o baseline por construção.
+No recorte "cartões com ≥1 conceito ligando notas distintas" (n=532), o modelo combinado (lista fixa + vocabulário) batia o FSRS otimizado (log-loss 0.1461 vs 0.1603), sobrevivia à recalibração de viés global, e vencia 1000 permutações da atribuição conceito→cartão (p≈0.001). Isso parecia evidência forte. A ablação abaixo, pedida antes de aceitar esse resultado, mostra por que não era.
 
-## Métricas
+## Ablação e controles
 
-### Todos os cartões elegíveis para avaliação (n=1095)
+Todos os controles rodaram **localmente, sem chamadas de API**, reaproveitando a classificação já em cache. Mesmo protocolo em todos: busca em grade (`priorVariance`, `driftPerDay`, `λ`) só no treino, avaliação no recorte cross-note fixo (n=532), bootstrap por cartão contra o FSRS otimizado, e 1000 permutações da atribuição cartão→conceito — cada permutação refazendo a mesma busca em grade no treino (não reaproveita os hiperparâmetros do modelo real).
 
-| Modelo | Log-loss | AUC | Calib. RMSE |
-|---|---|---|---|
-| Constante (taxa do treino) | 0.2859 | 0.5000 | 0.0223 |
-| FSRS otimizado | 0.2608 | 0.7430 | 0.0369 |
-| **Conceitos** | **0.2589** | **0.7609** | 0.0653 |
+| # | Variante | Log-loss | Bootstrap vs FSRS (IC95%) | Permutação (1000x) |
+|---|---|---|---|---|
+| — | FSRS otimizado (referência) | 0.1603 | — | — |
+| 1 | Só lista fixa (22 conceitos, LLM) | 0.1709 (pior) | Δ=-0.0110, [-0.0307, 0.0057] | p≈0.966 — **indistinguível de ruído** |
+| 2 | Só vocabulário (com palavras funcionais) | 0.1444 | Δ=0.0158, **[0.0006, 0.0289]** | p≈0.001 |
+| 3 | Vocabulário sem palavras funcionais | 0.1550 | Δ=0.0052, [-0.0047, 0.0130] | p≈0.001 |
+| 4 | Lista fixa + vocabulário sem funcionais | 0.1559 | Δ=0.0043, [-0.0074, 0.0134] | p≈0.001 |
+| 5 | Controle: nó global único (1 nó para todo cartão) | 0.1586 | Δ=0.0017, [-0.0060, 0.0093] | n/a (embaralhar não muda nada) |
+| **6** | **Controle: nó por notetype** (4 valores, sem palavras) | **0.1428 (melhor de todas)** | **Δ=0.0175, [0.0024, 0.0309]** | p≈0.001 |
+| 7 | Controle: nó por tamanho do front (1 / 2-4 / 5+ palavras) | 0.1505 | Δ=0.0096, [-0.0146, 0.0274] | p≈0.001 |
 
-Bootstrap por cartão (FSRS vs. conceitos): Δ=0.0019, IC95%=[-0.0065, 0.0091] — cruza zero.
+**Leitura:**
 
-### Só cartões com ≥1 conceito ligando notas distintas (n=532)
+- **A lista fixa por LLM (variante 1) não carrega sinal algum** — pior que o FSRS, e 96,6% de 1000 permutações aleatórias empatam ou superam o resultado real. Todo o trabalho de geração e classificação por LLM não contribuiu.
+- **Só o vocabulário com palavras funcionais (variante 2) e o notetype (variante 6) têm bootstrap fora de zero.** O notetype — um rótulo trivial de qual dos 4 notetypes o cartão pertence, sem nenhuma palavra — é o **melhor resultado de toda a investigação**.
+- **Palavras funcionais (the, is, to, a...) aparecem quase exclusivamente nos notetypes de frase** (Phrasal Verbs/Idiomatic Expressions). Isso torna "vocabulário com funcionais" um proxy indireto de "este cartão é de frase ou de palavra isolada" — exatamente o que o notetype captura diretamente e melhor. Sem as palavras funcionais (variante 3) ou usando um proxy mais fraco como tamanho (variante 7), o efeito não é significativo.
+- **O controle de nó global único (variante 5) não recupera o desempenho do vocabulário completo** (0.1586 vs 0.1444) — descarta a hipótese de que o vocabulário fosse "só" uma recalibração de viés único; mas isso não importa mais, porque o notetype sozinho já explica o efeito melhor do que o vocabulário.
 
-Este é o recorte relevante para testar a hipótese: cartões cujo único vínculo conceitual é vocabulário raro (aparece em 1 nota só) não têm como se beneficiar de transferência real.
+**Conclusão da ablação:** o único efeito que sobrevive a bootstrap e permutação ao mesmo tempo (notetype) não depende de conteúdo, vocabulário ou qualquer noção de conceito compartilhado entre cartões — é heterogeneidade de dificuldade entre os 4 notetypes do baralho, que o FSRS otimizado (um único conjunto de parâmetros para o baralho inteiro) não captura sozinho. Isso não confirma a hipótese da Fase 1.
 
-| Modelo | Log-loss | AUC | Calib. RMSE |
-|---|---|---|---|
-| Constante | 0.1493 | 0.5000 | 0.0270 |
-| FSRS otimizado | 0.1603 | 0.6937 | 0.0650 |
-| **Conceitos** | **0.1461** | **0.7280** | 0.0809 |
+## Controle adicional: FSRS recalibrado
 
-Bootstrap por cartão (FSRS vs. conceitos): Δ=0.0141, IC95%=[-0.0027, 0.0285] — ainda cruza zero, mas por pouco (limite inferior a -0.0027).
-
-## Controles
-
-Dois controles foram pedidos antes de aceitar o resultado acima, ambos no recorte "cross-note" (n=532):
-
-**1. FSRS recalibrado** (um único ajuste de viés global, ajustado no treino): melhora pouco o FSRS (0.1603 → 0.1565). O modelo de conceitos continua melhor (0.1461) mesmo contra essa versão recalibrada — Δ=0.0102, IC95%=[-0.0066, 0.0242]. **O ganho não é explicado por recalibração genérica.**
-
-**2. Conceitos embaralhados** (1000 permutações, cada uma refazendo a mesma busca em grade de `priorVariance`/`driftPerDay`/`λ` no treino — não reaproveitando os hiperparâmetros do modelo real):
-
-| | Log-loss |
-|---|---|
-| Real (conceitos verdadeiros) | **0.1461** |
-| Permutações — mínimo | 0.1600 |
-| Permutações — média | 0.1700 |
-| Permutações — p95 | 0.1833 |
-| Permutações — máximo | 0.1972 |
-
-**0 das 1000 permutações igualou ou superou o resultado real** (p empírico ≈ 0.001). O valor real fica abaixo até do melhor caso entre 1000 embaralhamentos, mesmo dando a cada permutação a mesma chance de reajustar os hiperparâmetros. Isso é evidência forte de que o conteúdo específico dos conceitos — não apenas a flexibilidade do modelo — é o que produz o ganho.
-
-## Como este veredito foi decidido
-
-Por instrução explícita: o resultado é classificado como **"evidência sugestiva"**, não confirmada, porque o bootstrap por cartão contra o FSRS continua cruzando zero (tanto na versão simples quanto contra o FSRS recalibrado), mesmo com o teste de permutação fortemente significativo (p<0.05). O bootstrap mede a incerteza de amostragem sobre a magnitude observada do efeito; o teste de permutação mede se o conteúdo dos conceitos importa (versus aleatório). Os dois testes respondem perguntas diferentes, e neste caso divergem: há evidência forte de que o mecanismo é real (permutação), mas a amostra (532 cartões avaliáveis) não é grande o bastante para que a magnitude do efeito fique confiavelmente acima de zero.
-
-## Amostra de conceitos (lista fixa completa, 22 itens)
-
-```
-phrasal verb: get away with, pass away, sleep over, call off, pull together,
-come up with, find out, back up, dress up, go back, keep on, sober up
-expressão idiomática: take for granted, long shot, when it comes to,
-so far so good, not my cup of tea, can't help but, at all, go against,
-I'll have you know, might as well
-```
-
-Cobertura por nota (número de notas distintas que cada conceito liga): entre 8 e 20 — nenhum conceito da lista fixa caiu na categoria "liga só 1 nota".
+Antes da ablação, testamos se o resultado inicial era só recalibração genérica: um único ajuste de viés global (ajustado no treino) melhora o FSRS de 0.1603 para 0.1565 — bem menos que qualquer uma das variantes com bootstrap significativo. Não explica os resultados por si só, mas também não é a explicação real (que acabou sendo o notetype).
 
 ## Custo
 
-Abordagem final (lista fixa + classificação): **25 chamadas, US$0,065 total**, Gemini 3.1 Flash-Lite, `thinkingLevel: MINIMAL`. Tentativas anteriores descartadas: ~US$1,13 em extração aberta via Anthropic Haiku (CIMV.apkg, todas as iterações) e ~US$0,004 na geração inicial da lista fixa.
+Abordagem da lista fixa: 25 chamadas ao Gemini 3.1 Flash-Lite, **US$0,065 total**. Toda a ablação e os controles (7 variantes × grid search × bootstrap × 1000 permutações cada) rodaram localmente, sem custo adicional de API. Tentativas anteriores descartadas: ~US$1,13 em extração aberta via Anthropic Haiku (CIMV.apkg).
 
 ## Limitações conhecidas
 
-- A lista fixa (22 conceitos) foi gerada de uma amostra de 100 cartões de frases (Phrasal Verbs/Idiomatic Expressions) — não cobre tempos verbais/gramática (o modelo ignorou essa categoria em duas tentativas mesmo quando pedida explicitamente) e não generaliza a outros baralhos/idiomas sem nova geração e revisão.
-- Apenas 532/926 cartões elegíveis (57%) têm algum conceito que liga notas distintas — o efeito medido está concentrado nessa fração minoritária do baralho.
-- Este baralho tem razão cartão:nota = 1.00 (sem cloze/reversos) — a categoria "same-note-only" aqui equivale a "conceito raro (aparece em 1 nota)", não a um artefato de cartões-irmãos triviais; o comportamento pode diferir em baralhos com muitos cartões-irmãos.
-- `elapsed_days` do FSRS usa diferença de dia-calendário UTC, não o horário exato de virada de dia configurado no Anki do usuário (aproximação já assumida desde o módulo `fsrs`, não específica desta análise).
-- Bootstrap e teste de permutação respondem perguntas diferentes e podem divergir, como aconteceu aqui — nenhum dos dois isoladamente decide a questão.
+- **Limitação principal:** este baralho é majoritariamente composto de itens isolados — cartões de vocabulário de palavra única (54% dos elegíveis, nos notetypes "4000 EEW"/"4000 EEW Extra"), sem contexto compartilhado com outros cartões. Há pouco conhecimento genuinamente compartilhado entre cartões para uma camada de conceitos explorar. Os notetypes de frase têm mais estrutura, mas mesmo ali o efeito não sobreviveu aos controles como conteúdo genuíno.
+- O resultado significativo (notetype) sugere que o ganho real disponível é heterogeneidade de dificuldade **entre notetypes**, não entre conceitos — um problema mais simples, que nem exigiria uma camada de conceitos: FSRS com parâmetros por notetype (em vez de um conjunto único para o baralho todo) provavelmente já capturaria a maior parte desse ganho.
+- Razão cartão:nota = 1.00 neste baralho — não testado em baralho com cloze/reversos.
+- A lista fixa de conceitos por LLM (o componente mais caro e complexo) não teve efeito aqui. Não se sabe se isso é uma falha do método ou se baralhos com mais estrutura gramatical/conceitual compartilhada se beneficiariam mais.
+- Confirmação exigiria repetir a variante mais promissora em dados novos — outro baralho, ou mais revisões do mesmo. Os resultados vêm de uma única amostra de 532 cartões avaliáveis, insuficiente para confirmação independente do teste de permutação.
+- `elapsed_days` do FSRS usa diferença de dia-calendário UTC, não o horário de virada de dia configurado no Anki do usuário (aproximação já assumida desde o módulo `fsrs`).
