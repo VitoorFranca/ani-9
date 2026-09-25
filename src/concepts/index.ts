@@ -16,3 +16,5 @@ export type {
 } from "./canonicalize.js";
 export { computeIdfWeights } from "./weights.js";
 export type { ConceptWeight, IdfResult } from "./weights.js";
+export { splitCompoundConcepts, splitCompoundLabel } from "./postprocess.js";
+export type { SplitCompoundConceptsStats } from "./postprocess.js";
