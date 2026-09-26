@@ -26,6 +26,9 @@ importers:
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
+      csv-parse:
+        specifier: 7.0.3
+        version: 7.0.3
       fflate:
         specifier: 0.8.3
         version: 0.8.3
@@ -805,6 +808,9 @@ packages:
 
   chownr@1.1.4:
     resolution: {integrity: sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==}
+
+  csv-parse@7.0.3:
+    resolution: {integrity: sha512-YFd3QM/yo17vH91L1IOZuvl09zM0zEEtdfTcOCKWcMdM++MNaQSyp09slXyFCLaPXvHstQFx/xC8myiFHSMUvw==}
 
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
@@ -1881,6 +1887,8 @@ snapshots:
   chai@6.2.2: {}
 
   chownr@1.1.4: {}
+
+  csv-parse@7.0.3: {}
 
   data-uri-to-buffer@4.0.1: {}
 
