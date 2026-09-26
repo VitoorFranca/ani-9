@@ -76,3 +76,13 @@ A cobertura pooled (70,3%) cruza o limiar de "alta" definido para acionar a vari
 - **Variante**: base (FSRS + nó por baralho) + nó por tópico, com `lambdaDeck`/`lambdaTopico` separados, mesma grade 4D.
 - **Verificação de equivalência**: com `lambdaTopico=0`, idêntica ao controle "deck sozinho" (mesmo procedimento e mesma tolerância <1e-12 já usados).
 - **Bootstrap 3.000x**; se o IC não estiver inteiramente a favor, para aqui, resultado final. Se estiver a favor, permutação 1.000x (só do tópico, deck fixo).
+
+## Emenda: recortes de avaliação (registrada antes de rodar a avaliação)
+
+- **Análise principal**: todas as revisões de teste espaçadas (`isTestEval`, ≥1 dia) — a mesma população já usada em todo `MISAEL_PROTOCOL.md`/`analyze-misael.mts`, sem filtro adicional. O bootstrap e a permutação das duas variantes (lista fixa, tópico) rodam sobre este recorte.
+- **Suplementar, por variante** (reportado à parte, não entra no critério de sucesso):
+  - Lista fixa: só revisões de cartões com **≥1 conceito atribuído pela classificação** (cobertura real: 20,0% / 50,2% / 48,0% por baralho, ver acima).
+  - Tópico: só revisões de cartões com **subbaralho real** (não o rótulo de baralho usado como fallback) — ou seja, só o recorte "com subbaralho" da tabela de cobertura acima (1.104/1.571 pooled, mas quase todo puxado pelo Direito Administrativo).
+- Cada variante usa **sua própria grade 4D** (`priorVariance`, `driftPerDay`, `lambdaDeck`, `lambdaExtra`), sua própria verificação de equivalência (`lambdaExtra=0` idêntico ao controle "deck sozinho", tolerância <1e-12), e sua própria decisão bootstrap→permutação, independente da outra variante.
+- **Permutação**: antes de rodar as 1.000 permutações completas de qualquer variante que passe no bootstrap, roda-se um ensaio de **10 permutações** primeiro, reportando tempo e pico de memória (mesma prática de segurança usada no teste de vocabulário, depois do incidente de memória) — as 1.000 completas só rodam com aprovação explícita após o ensaio.
+- Execução em **foreground, com `node --import tsx` direto (não `npx`)**, e com timeout do lado do chamador — mesma prática já estabelecida.
