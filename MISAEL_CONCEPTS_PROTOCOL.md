@@ -139,3 +139,16 @@ Motivação: o teste de contágio de sessão (`MISAEL_SESSION_PROTOCOL.md`) acho
 - **Avaliação**: log-loss no split de teste padrão (70/30), revisões espaçadas (`isTestEval`) — mesma convenção do resto deste documento.
 - **Bootstrap por SESSÃO** (não por cartão) — `bootstrapLogLossDeltaByGroup` com o `sessionId` de cada revisão de teste como grupo, 3.000 iterações, seed 42.
 - Permutação não faz parte desta rodada exploratória (só bootstrap, por enquanto).
+
+### Resultado exploratório
+
+Rodado em `scripts/analyze-misael-concepts-shortterm-topic.mts`: 953ms. Verificação de equivalência: diferença = 0 exata.
+
+| | logLoss (treino) | logLoss (teste) | AUC (teste) |
+|---|---|---|---|
+| Base (FSRS+deck) | 0,4879 | 0,4792 | 0,8034 |
+| Base + tópico de curto prazo | 0,4142 | **0,4358** | **0,8323** |
+
+**Achado notável**: a busca em grade escolheu `lambdaDeck=0` — o modelo ótimo no treino descarta o nó de baralho inteiramente e usa só o nó de tópico de curto prazo (`lambdaExtra=2`, máximo da grade).
+
+**Bootstrap por sessão (3000x) vs base**: Δ=0,0432, **IC95=[-0,0045, 0,0944]** — positivo, mas cruza zero por uma margem pequena (limite inferior -0,0045). **Não passa** no critério estrito (IC inteiramente a favor), mas é o resultado mais próximo de um efeito real de toda a investigação no Misael (vocabulário, lista fixa, tópico persistente, teto de variância) — nenhum outro teste chegou perto de excluir zero com o ponto estimado nessa magnitude. Fica registrado como resultado exploratório negativo (não confirmado), não como confirmação — não foi rodada permutação, e o critério de sucesso não foi atingido.
