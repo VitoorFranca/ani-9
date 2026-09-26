@@ -30,6 +30,16 @@ Nota de limpeza: `answer` às vezes tem anotações de julgamento entre colchete
 
 Só usuários com **≥200 revisões avaliáveis** e **≥20 falhas no split de teste**. Reportar quantos usuários passam.
 
+### Emenda registrada antes de rodar qualquer variante: definição de "avaliável"
+
+A definição herdada do pipeline do `.apkg` (`elapsedDays >= 1` desde a revisão anterior do mesmo cartão) **não se aplica ao KARL**: repetições do mesmo `card_id` no KARL tipicamente acontecem no mesmo dia (prática tipo Leitner/quiz bowl com requeue rápido), não em intervalos de dias como no Anki. Com essa definição, **0 de 543 usuários** atingem 200 revisões avaliáveis (o usuário com mais revisões no dataset inteiro, 16.265 linhas, só tem 72). Verificado antes de qualquer variante ser rodada, não depois de ver resultados.
+
+**Definição corrigida, fixada agora:** avaliável = qualquer revisão após a 1ª exposição ao cartão (`predictedR !== null`; só a toda-primeira exposição a cada fato fica de fora, por não ter estado prévio para prever). Com essa definição, **78 de 543 usuários** passam no filtro (≥200 avaliáveis e ≥20 falhas no split de teste).
+
+Consequências fixadas junto com a emenda:
+- O baseline FSRS usa `enableShortTerm: true` na otimização (já era o padrão em `optimizeParameters`, sem mudança de código) para tratar corretamente revisões no mesmo dia.
+- Todo resultado é reportado em **dois recortes adicionais**, calculados sobre o conjunto de revisões avaliáveis: **mesmo dia** (`elapsedDays === 0`) e **intervalo ≥1 dia** (`elapsedDays >= 1`). O **critério de sucesso continua definido sobre o total** (avaliáveis, sem separar por recorte); os dois recortes entram no relatório como informação suplementar, não como critério adicional de vitória.
+
 ## Variantes e controles (fixados, mesma ordem de report)
 
 1. **Variante principal**: vocabulário sem palavras funcionais (`extractVocabularyConcepts(front, { excludeFunctionWords: true })`), `front` = pergunta+resposta conforme decisão acima.
