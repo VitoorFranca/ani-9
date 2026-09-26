@@ -29,6 +29,14 @@ Terceiro teste de confirmação fora da amostra do achado exploratório "nó de 
 
 **Δ log-loss agregado** (base − variante, pooling das previsões de teste de todos os usuários incluídos) com **IC95% do bootstrap por usuário** (`bootstrapLogLossDeltaByGroup`, agrupado por `user_id`, mesma convenção já usada no teste do KARL) **inteiramente a favor da variante**.
 
+## Emenda registrada ANTES das contagens: definição precisa de raiz, profundidade e fallback
+
+- **Raiz**: um deck cujo `parent_id` é nulo, `0`, ou não existe na tabela `decks` daquele usuário (referência pendurada) — tratado como raiz por segurança, não como erro.
+- **Profundidade** de um deck = número de passos até a raiz (raiz em si tem profundidade 0; filho direto da raiz tem profundidade 1; e assim por diante). Resolvida com proteção contra ciclo (conjunto de visitados), defensiva contra dados malformados.
+- **"≥2 níveis" (critério de inclusão do usuário)**: o usuário tem pelo menos um cartão cujo deck tem **profundidade ≥2** (ou seja, o pai desse deck não é raiz — é um deck real, intermediário).
+- **Tópico** = `deck_id` do cartão, **baralho** = `parent_id` desse deck — só quando o deck do cartão tem profundidade ≥2 (seu pai é um deck real, não raiz).
+- **Fallback (cartões em decks de profundidade 0 ou 1)**: entram só com o nó de baralho, sem tópico genuíno — mesma convenção do Misael. `baralho = deck_id` do próprio deck do cartão (não há pai melhor disponível); `tópico` cai no mesmo rótulo do baralho (`deck:${deckId}`, mesma string usada como fallback em `MISAEL_CONCEPTS_PROTOCOL.md`). Profundidade 0 é um caso degenerado (cartão diretamente numa raiz) não mencionado explicitamente no pedido original, mas tratado pela mesma regra por consistência.
+
 ## Fonte de dados e licença
 
 - **Repositório oficial**: `open-spaced-repetition/anki-revlogs-10k` no Hugging Face. **Só a fonte oficial** — nenhuma cópia de terceiros.
