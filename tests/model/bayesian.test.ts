@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GraphBayesianModel, gridSearchHyperparams, rescaleSimilarity } from "../../src/model/bayesian.js";
+import { GraphBayesianModel, gridSearchHyperparams, rescaleSimilarity, buildCombinedLinks } from "../../src/model/bayesian.js";
 
 const HP = { priorVariance: 1, driftPerDay: 0.01 };
 
@@ -168,5 +168,66 @@ describe("gridSearchHyperparams", () => {
     });
     expect(result.best).toEqual({ priorVariance: 1, driftPerDay: 0.01 });
     expect(result.tried).toHaveLength(6);
+  });
+});
+
+describe("buildCombinedLinks", () => {
+  it("returns no links at all when baseId is undefined, regardless of extra", () => {
+    // The exact bug reintroduced twice in the Misael analysis scripts: a
+    // card with no base assignment (e.g. contentless) must fall back to no
+    // links (pure FSRS passthrough), never a "base:undefined" link.
+    expect(buildCombinedLinks<string>(undefined, ["algum-conceito"], { lambdaBase: 2, lambdaExtra: 1 })).toEqual([]);
+    expect(buildCombinedLinks<string>(undefined, [], { lambdaBase: 2, lambdaExtra: 1 })).toEqual([]);
+  });
+
+  it("returns a single base link when extra is empty", () => {
+    expect(buildCombinedLinks("deck:A", [], { lambdaBase: 2, lambdaExtra: 1 })).toEqual([
+      { id: "deck:A", weight: 2 },
+    ]);
+  });
+
+  it("averages extra weight across the extra group, base weight unaffected", () => {
+    const links = buildCombinedLinks("deck:A", ["x", "y"], { lambdaBase: 2, lambdaExtra: 1 });
+    expect(links).toEqual([
+      { id: "deck:A", weight: 2 },
+      { id: "x", weight: 0.5 },
+      { id: "y", weight: 0.5 },
+    ]);
+  });
+
+  it("gives every extra link weight 0 when lambdaExtra=0, without omitting them", () => {
+    const links = buildCombinedLinks("deck:A", ["x", "y", "z"], { lambdaBase: 2, lambdaExtra: 0 });
+    expect(links).toEqual([
+      { id: "deck:A", weight: 2 },
+      { id: "x", weight: 0 },
+      { id: "y", weight: 0 },
+      { id: "z", weight: 0 },
+    ]);
+  });
+
+  it("equivalence: lambdaExtra=0 reproduces the base-only model exactly, review by review", () => {
+    // The property buildCombinedLinks exists to guarantee: a variant at
+    // lambdaExtra=0 must be bit-identical to the base-only model, so a grid
+    // search that includes lambdaExtra=0 can never score worse than the base.
+    const hp = { priorVariance: 0.5, driftPerDay: 0.01 };
+    const combinedHp = { lambdaBase: 1.5, lambdaExtra: 0 };
+    const reviews: { fsrsR: number; y: 0 | 1; day: number; extra: string[] }[] = [
+      { fsrsR: 0.9, y: 1, day: 0, extra: ["x"] },
+      { fsrsR: 0.6, y: 0, day: 1, extra: [] },
+      { fsrsR: 0.7, y: 1, day: 3, extra: ["x", "y"] },
+      { fsrsR: 0.5, y: 0, day: 5, extra: ["y"] },
+    ];
+
+    const baseModel = new GraphBayesianModel<string>(hp);
+    const combinedModel = new GraphBayesianModel<string>(hp);
+
+    for (const r of reviews) {
+      const baseLinks = buildCombinedLinks("deck:A", [], { lambdaBase: combinedHp.lambdaBase, lambdaExtra: 0 });
+      const combinedLinks = buildCombinedLinks("deck:A", r.extra, combinedHp);
+      const basePrediction = baseModel.predictAndUpdate(baseLinks, r.fsrsR, r.y, r.day);
+      const combinedPrediction = combinedModel.predictAndUpdate(combinedLinks, r.fsrsR, r.y, r.day);
+      expect(combinedPrediction).toBeCloseTo(basePrediction, 12);
+    }
+    expect(baseModel.getState("deck:A")).toEqual(combinedModel.getState("deck:A"));
   });
 });

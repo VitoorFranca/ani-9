@@ -42,6 +42,36 @@ export interface WeightedLink<Id = number> {
   weight: number;
 }
 
+/**
+ * Builds links for the "base node + optional extra nodes" pattern shared by
+ * every deck/topic/concept variant in the Misael analysis scripts: a fixed
+ * base node (e.g. `deck:X`) at `lambdaBase`, plus zero or more extra nodes
+ * (e.g. concept or topic names) each at `lambdaExtra / extra.length`
+ * (average, not sum, across the extra group).
+ *
+ * Centralized here after the SAME bug — a card with no `baseId` (e.g.
+ * contentless, excluded from the eligible set) getting a spurious
+ * `"deck:undefined"` link instead of falling back to no links at all (pure
+ * FSRS passthrough) — was independently reintroduced twice in separate
+ * analysis scripts that each hand-rolled this logic. `baseId === undefined`
+ * always returns `[]`, matching every other variant's fallback, regardless
+ * of whether `extra` is non-empty.
+ *
+ * At `lambdaExtra = 0`, the result is provably equivalent to the base-only
+ * case (extra links carry weight 0, which `GraphBayesianModel` treats as a
+ * complete no-op for both prediction and update) — verified by test.
+ */
+export function buildCombinedLinks<Id>(
+  baseId: Id | undefined,
+  extra: readonly Id[],
+  hp: { lambdaBase: number; lambdaExtra: number },
+): WeightedLink<Id>[] {
+  if (baseId === undefined) return [];
+  const links: WeightedLink<Id>[] = [{ id: baseId, weight: hp.lambdaBase }];
+  for (const id of extra) links.push({ id, weight: hp.lambdaExtra / extra.length });
+  return links;
+}
+
 interface NodeState {
   theta: number;
   variance: number;
