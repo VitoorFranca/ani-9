@@ -25,10 +25,20 @@ Errar um cartão A pouco antes de revisar um cartão B **relacionado** (mesmo t�
 
 Efeito de conceito **negativo**, com **IC95% do bootstrap por sessão** (resample de sessões inteiras, não de pares nem de cartões) **inteiramente abaixo de zero**.
 
+## Emenda registrada ANTES de calcular resíduos/efeitos: recorte suplementar "mesmo baralho"
+
+Motivação: no recorte principal, "não relacionados" pode incluir pares de baralhos diferentes (ex. um cartão de Língua Portuguesa como A "não relacionado" de um B de Direito Administrativo) — um efeito encontrado aí poderia ser só heterogeneidade entre baralhos (já sabida ser forte, ver `MISAEL_PROTOCOL.md`), não estrutura de conceito.
+
+- **Relacionados**: definição idêntica ao recorte principal (mesmo tópico OU conceito da lista em comum) — não muda.
+- **Não relacionados (recorte suplementar)**: **mesmo baralho** que B, subbaralho diferente, e nenhum conceito em comum — restringe o grupo de controle a pares dentro do mesmo assunto amplo.
+- Para cada B, o A mais recente de cada grupo é escolhido independentemente para os dois recortes (o "relacionado" pode ser o mesmo A nos dois recortes; o "não relacionado" pode diferir, já que o pool candidato do suplementar é um subconjunto do principal).
+- **Contagens do recorte suplementar reportadas antes de calcular qualquer resíduo/efeito** (mesma prática do recorte principal).
+- **Interpretação registrada antes de ver resultados**: o critério de sucesso principal não muda. Mas se o recorte principal passar (efeito de conceito negativo, IC abaixo de zero) e o suplementar **não** passar, o resultado é interpretado como **efeito de baralho**, não efeito de conceito genuíno — não conta como confirmação da hipótese de conceito.
+
 ## Execução desta rodada
 
-**Só contagens** — sessões detectadas e pares por grupo (relacionados × A-certo, relacionados × A-errado, não relacionados × A-certo, não relacionados × A-errado). Nenhum resíduo, efeito ou bootstrap é calculado nesta etapa. Resultado reportado, depois **para** para revisão antes de prosseguir para a medida e o critério de sucesso acima.
+Contagens dos dois recortes (principal e suplementar) reportadas primeiro. Depois, resíduos, efeitos e bootstrap por sessão (3.000 iterações, seed 42 — mesma convenção do resto do projeto) calculados e reportados para os dois recortes.
 
 ## Restrição
 
-Sem API nesta etapa (usa a classificação e os tópicos já em cache).
+Sem API (usa a classificação e os tópicos já em cache).
