@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FSRSAlgorithm, generatorParameters } from "ts-fsrs";
-import { replayAll, replayCard } from "../../src/fsrs/replay.js";
+import { replayAll, replayAllFractional, replayCard, replayCardFractional } from "../../src/fsrs/replay.js";
 import type { Review } from "../../src/ingest/types.js";
 
 const DAY = 86_400_000;
@@ -55,6 +55,52 @@ describe("replayCard", () => {
     const afterAgain = replayCard(algo, [review(BASE, 1, 1), review(BASE + 5 * DAY, 1, 1)]);
     const afterGood = replayCard(algo, [review(BASE, 1, 1), review(BASE + 5 * DAY, 1, 3)]);
     expect(afterGood[1]!.stateAfter.stability).toBeGreaterThan(afterAgain[1]!.stateAfter.stability);
+  });
+});
+
+describe("replayCardFractional", () => {
+  it("gives a same-day review a predictedR strictly below 1, unlike replayCard's exact 1", () => {
+    const reviews = [review(BASE, 1, 3), review(BASE + 3 * 60 * 60 * 1000, 1, 3)]; // 3h later, same day
+    const [, floored] = replayCard(algorithm(), reviews);
+    const [, fractional] = replayCardFractional(algorithm(), reviews);
+    expect(floored?.predictedR).toBe(1);
+    expect(fractional?.predictedR).not.toBeNull();
+    expect(fractional!.predictedR!).toBeLessThan(1);
+    expect(fractional!.predictedR!).toBeGreaterThan(0);
+  });
+
+  it("still floors elapsedDays for cut classification, even though t itself is fractional", () => {
+    const reviews = [review(BASE, 1, 3), review(BASE + 3 * 60 * 60 * 1000, 1, 3)];
+    const [, second] = replayCardFractional(algorithm(), reviews);
+    expect(second?.elapsedDays).toBe(0);
+    expect(second?.includedInEval).toBe(false);
+  });
+
+  it("agrees with replayCard on whole-day gaps (fractional and floored elapsed time coincide)", () => {
+    const reviews = [review(BASE, 1, 3), review(BASE + 5 * DAY, 1, 3)];
+    const [, floored] = replayCard(algorithm(), reviews);
+    const [, fractional] = replayCardFractional(algorithm(), reviews);
+    expect(fractional?.elapsedDays).toBe(floored?.elapsedDays);
+    expect(fractional?.predictedR).toBeCloseTo(floored!.predictedR!, 10);
+  });
+
+  it("treats the first review as t=0 with no predicted R, same as replayCard", () => {
+    const [first] = replayCardFractional(algorithm(), [review(BASE, 1, 3)]);
+    expect(first?.elapsedDays).toBeNull();
+    expect(first?.predictedR).toBeNull();
+    expect(first?.includedInEval).toBe(false);
+  });
+});
+
+describe("replayAllFractional", () => {
+  it("replays multiple cards independently and returns global chronological order", () => {
+    const reviews = [
+      review(BASE + 2 * DAY, 200, 3),
+      review(BASE, 100, 3),
+      review(BASE + DAY, 100, 3),
+    ];
+    const result = replayAllFractional(algorithm(), reviews);
+    expect(result.map((r) => r.reviewId)).toEqual([BASE, BASE + DAY, BASE + 2 * DAY]);
   });
 });
 
