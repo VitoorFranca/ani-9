@@ -52,3 +52,36 @@ Resultados por baralho individual (log-loss/AUC restrito às revisões espaçada
 ## Restrição
 
 Nenhuma chamada a API de modelo (Anthropic, Google etc.). Embeddings locais (`@huggingface/transformers`) são permitidos.
+
+## Emendas registradas APÓS ver resultados preliminares (exploratórias, não pré-registradas)
+
+Tudo nesta seção foi decidido depois de rodar a variante principal e observar um resultado preliminar ruim — registrado explicitamente como pós-hoc/exploratório, ao contrário do resto deste documento.
+
+### 1. Correção: normalização do conceito por média, não soma
+
+Uma rodada preliminar mostrou a variante principal com previsões saturando em 0,0000/1,0000 exatos no teste (log-loss explodindo). Causa: cada palavra de vocabulário de um cartão contribuía independentemente com peso `λ`, então cartões com mais palavras distintas recebiam um deslocamento de log-odds proporcionalmente maior — com temas por palavra tendo poucas observações, isso saturava a previsão. **Corrigido**: peso de cada conceito = `λ / número de conceitos do cartão` (média, não soma). Cartões com 1 único rótulo (deck/notetype/global) não são afetados (dividir por 1).
+
+### 2. Correção: gate de `includedInEval` também no treino
+
+Bug de implementação (não decisão de protocolo): a pontuação da busca em grade no treino estava contando **todas** as revisões de treino, inclusive repetições no mesmo dia, em vez de exigir `includedInEval` (gap ≥1 dia) como o protocolo do English.apkg exige mesmo para a pontuação de treino. Corrigido para exigir `includedInEval` também no treino — o modelo continua sendo atualizado (`predictAndUpdate`) em toda revisão de treino continuamente; só a pontuação usada para escolher hiperparâmetros passou a ser filtrada.
+
+### 3. Diagnóstico do FSRS: por que ele perde para a constante
+
+Uma rodada preliminar mostrou o FSRS otimizado perdendo para a baseline constante (taxa do treino) nos dois splits, e os 4 primeiros parâmetros otimizados (estabilidade inicial por nota Again/Hard/Good/Easy) colapsando no mesmo valor. Investigado com 5 checagens, sem API, sem permutação:
+
+1. **Controle no English.apkg**: reotimizado, os 4 primeiros parâmetros ficaram distintos (`[0.2849, 2.1383, 4.4924, 43.3663]`) — o pipeline/otimizador não está quebrado de forma geral.
+2. **Cobertura do otimizador**: 1.154 de 1.321 cartões de treino contribuíram itens ao otimizador; a avaliação do FSRS no treino dá o mesmo log-loss (0,5735) filtrando só por esses cartões ou não — não há divergência de cobertura (matematicamente, todo cartão com revisão `includedInEval` no treino necessariamente contribuiu ao otimizador, e vice-versa).
+3. **Primeira nota / início com type=0**: 93,2% dos 1.573 cartões começam com etapa de aprendizado (saudável); primeira nota Easy=776 (49%, mais alto que o normal), Again=121, Hard=328, Good=348.
+4. **Otimização por baralho, separadamente**: os 4 primeiros parâmetros **colapsam nos 3 baralhos individualmente** (não é artefato de misturar 3 assuntos) — Língua Portuguesa: `[0.3626]×4`; Direito Administrativo: `[0.1693, 0.3675, 0.3675, 0.3675]`; Administração Pública: `[0.1711, 0.1711, 0.1711, 1.5308]`.
+5. **Consistência timestamp vs ivl/lastIvl**: ordenação/pareamento corretos (`prev.ivl == cur.lastIvl` em 95,1% dos pares consecutivos), mas os valores absolutos revelam uso extremamente irregular — etapas de reaprendizado agendadas para minutos (`ivl` negativo, em segundos) seguidas de gaps reais de dezenas a centenas de dias antes da próxima revisão, repetidamente, nos 3 baralhos.
+
+**Conclusão do diagnóstico**: não é um bug de parsing/pipeline (itens 1, 2 e 5 descartam isso). É uso real extremamente irregular (longas pausas entre sessões de estudo) que impede o otimizador de separar as 4 estabilidades iniciais por nota nestes baralhos especificamente — diferente do English.apkg, com uso mais regular.
+
+### 4. Nova base e nova variante (substituem o critério de sucesso original)
+
+Dado que o FSRS puro é uma baseline fraca aqui (perde para a constante) mas o nó por baralho melhora substancialmente sobre ele, o teste principal passa a ser:
+
+- **Nova base**: FSRS + nó por baralho (o controle "nó por baralho" já rodado, sem mudança).
+- **Nova variante**: FSRS + nó por baralho + vocabulário sem funcionais, todos no mesmo grafo por cartão (`[deck:X, palavra1, palavra2, ...]`), com a mesma normalização por média (peso = `λ / total de rótulos do cartão`, incluindo o rótulo de deck nessa contagem).
+- **Novo critério de sucesso**: a variante vence a nova base com IC95% do bootstrap (por cartão) inteiramente a favor, **e** uma permutação que embaralha **só a atribuição de vocabulário** (o rótulo de deck permanece fixo, não embaralhado, em cada permutação) dá p < 0,05, refazendo a busca em grade a cada permutação.
+- As variantes/controles originais (principal sozinha, deck sozinho, notetype sozinho, global, e a comparação por embedding, ainda pendente) continuam sendo reportadas como informação suplementar, não fazem mais parte do critério de sucesso.
