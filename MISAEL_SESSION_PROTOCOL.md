@@ -42,3 +42,28 @@ Contagens dos dois recortes (principal e suplementar) reportadas primeiro. Depoi
 ## Restrição
 
 Sem API (usa a classificação e os tópicos já em cache).
+
+## Resultado
+
+Rodado em `scripts/analyze-misael-session.mts`. Contagens:
+
+| | Principal | Suplementar (mesmo baralho) |
+|---|---|---|
+| Pares totais | 10.088 | 9.723 |
+| Relacionados, A certo | 5.319 | 5.319 |
+| Relacionados, A errado | 1.536 | 1.536 |
+| Não relacionados, A certo | 2.703 | 2.382 |
+| Não relacionados, A errado | 530 | 486 |
+
+(396 sessões detectadas, 341 com ≥2 revisões elegíveis; 7.318 de 12.823 candidatos a B são espaçados.)
+
+**Efeitos e bootstrap por sessão (3.000x):**
+
+| Recorte | Efeito(relacionados) | Efeito(não relacionados) | Efeito de conceito | IC95% | Sucesso? |
+|---|---|---|---|---|---|
+| Principal | -0,2723 | -0,1245 | -0,1478 | [-0,2532, -0,0533] | **Sim** |
+| Suplementar (mesmo baralho) | -0,2723 | -0,1400 | -0,1323 | [-0,2425, -0,0325] | **Sim** |
+
+**Os dois recortes passam.** Pela regra de interpretação fixada antes de rodar, isso não é atribuível a efeito de baralho (que exigiria o principal passar e o suplementar não) — é evidência de um **efeito de conceito genuíno**: um erro num cartão relacionado (mesmo tópico ou conceito da lista fixa) pouco antes de uma revisão espaçada de outro cartão prejudica essa revisão mais do que um erro num cartão não relacionado, mesmo controlando por baralho.
+
+Este é um resultado **qualitativamente diferente** dos testes anteriores (`MISAEL_PROTOCOL.md`, `MISAEL_CONCEPTS_PROTOCOL.md`): não é uma melhoria de log-loss agregado de um modelo, é um efeito local de contágio de erro entre cartões relacionados numa mesma sessão de estudo — e não contradiz os resultados negativos anteriores, que testavam algo diferente (se adicionar conceitos como nó no modelo bayesiano melhora a previsão agregada).
