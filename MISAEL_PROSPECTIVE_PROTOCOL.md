@@ -22,3 +22,14 @@ Registrado e **congelado em 2026-09-26**. Nada aqui — modelo, hiperparâmetros
 ## Restrição
 
 Sem API. Sem reajuste de hiperparâmetros, modelo ou definição de qualquer tipo após 2026-09-26 — qualquer mudança necessária vira um novo teste, não uma correção deste.
+
+## Emenda registrada ANTES de olhar os dados: confirmação passa a ser em `data/candy/`
+
+Um novo baralho apareceu em `data/candy/`, de **outro usuário**, nunca analisado antes — mais rápido e mais limpo como confirmação fora da amostra do que esperar acumular 150 falhas futuras no Misael (que continua válido, mas fica em segundo plano). Registrado **antes de qualquer inspeção** dos dados de `data/candy/`.
+
+- **O que continua congelado**: o **modelo de tópico e seus hiperparâmetros**, exatamente como acima — `${sessionId}::${tópico}`, reinicia por sessão, `priorVariance=1, driftPerDay=0.01, lambdaDeck=0, lambdaExtra=2`. Como `lambdaDeck=0`, o nó de baralho não contribui em nada à variante independente de qualquer coisa — a variante já é, na prática, só o nó de tópico de curto prazo.
+- **O que NÃO fica congelado, ao contrário do teste original**: o **FSRS**. Para este novo usuário, o FSRS é otimizado do zero no treino dele (`optimizeParameters(train)`, mesmo split cronológico 70/30, mesma metodologia da análise original) — reaproveitar os parâmetros de FSRS ajustados para o Misael não faria sentido para um usuário diferente, com histórico de estudo diferente.
+- **Base**: FSRS (otimizado neste usuário) + nó por baralho, com os hiperparâmetros do nó de baralho **também ajustados no treino deste usuário** (mesma busca em grade 3D já usada em toda a metodologia — `priorVariance`, `driftPerDay`, `lambda`), não os valores congelados do Misael.
+- **Avaliação**: revisões espaçadas do **split de teste (30%) deste usuário** — não mais um corte de data futura (não se aplica a um usuário novo, sem histórico já visto).
+- **Critério**: idêntico — Δ log-loss (base − variante) com IC95% do bootstrap por sessão inteiramente a favor.
+- **Requisito mínimo antes de avaliar**: idêntico — **≥150 falhas** em revisões espaçadas no split de teste.
