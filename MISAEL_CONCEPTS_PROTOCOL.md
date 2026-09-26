@@ -41,3 +41,17 @@ Mesmos 3 baralhos combinados de `data/misael/`, mesma ingestão/pooling já veri
 ## Restrição
 
 Nenhuma outra chamada de API além do Gemini para geração de lista e classificação, ambas explicitamente aprovadas por etapa.
+
+## Emenda registrada ANTES de regenerar as listas (após ver a 1ª rodada abaixo do mínimo)
+
+A 1ª rodada de geração (amostra de 100 cartões/baralho, alvo de 30-80 conceitos no prompt) produziu listas bem abaixo do mínimo pedido: 17 (Língua Portuguesa), 6 (Direito Administrativo), 10 (Administração Pública) — custo real US$0,01217, salvo em `cache/misael-fixed-list-*.json`. Decisão do usuário, registrada antes de rodar de novo:
+
+- **Removido o alvo numérico (30-80) do prompt** — `generateFixedList`/`buildFixedListPrompt` ganharam a opção `includeCountTarget` (padrão `true`, preservando o comportamento já usado no English.apkg); aqui usa-se `includeCountTarget: false`.
+- **Amostra maior e assimétrica por baralho**:
+  - Língua Portuguesa: **todos os 270 cartões elegíveis** (não mais amostra de 100).
+  - Administração Pública: **todos os 319 cartões elegíveis**.
+  - Direito Administrativo: **300 cartões variados** (de 982 elegíveis), via `selectFixedListSample(cards, 300, seed=42)` (mesma priorização de cartões de frase).
+- Mantidas: regra de ≥3 cartões da amostra por conceito, citação de 2 exemplos por conceito.
+- **Teto de custo total continua US$0,20** (já gasto: US$0,01217 da 1ª rodada).
+- **Estimativa da regeneração** (mesma metodologia, a partir de tamanho médio real de texto por baralho: ~297/279/271 caracteres): Língua Portuguesa ≈23.450 tokens de entrada, Direito Administrativo ≈26.000, Administração Pública ≈27.615; saída estimada com folga (~1.800 tokens/baralho, incerta sem o alvo numérico) → **≈ US$0,03 adicionais**, total acumulado estimado ≈ **US$0,04-0,05**, bem abaixo do teto de US$0,20.
+- **Relato pós-regeneração**: por baralho, número de conceitos e uma estimativa de cobertura baseada só nos exemplos citados na amostra (quantos cartões distintos da amostra são citados como exemplo de pelo menos 1 conceito, dividido pelo tamanho da amostra) — não é a cobertura real do baralho inteiro, que só é conhecida após a classificação (próxima etapa, ainda pendente de aprovação separada).
