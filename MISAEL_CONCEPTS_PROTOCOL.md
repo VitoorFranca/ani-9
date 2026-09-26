@@ -86,3 +86,17 @@ A cobertura pooled (70,3%) cruza o limiar de "alta" definido para acionar a vari
 - Cada variante usa **sua própria grade 4D** (`priorVariance`, `driftPerDay`, `lambdaDeck`, `lambdaExtra`), sua própria verificação de equivalência (`lambdaExtra=0` idêntico ao controle "deck sozinho", tolerância <1e-12), e sua própria decisão bootstrap→permutação, independente da outra variante.
 - **Permutação**: antes de rodar as 1.000 permutações completas de qualquer variante que passe no bootstrap, roda-se um ensaio de **10 permutações** primeiro, reportando tempo e pico de memória (mesma prática de segurança usada no teste de vocabulário, depois do incidente de memória) — as 1.000 completas só rodam com aprovação explícita após o ensaio.
 - Execução em **foreground, com `node --import tsx` direto (não `npx`)**, e com timeout do lado do chamador — mesma prática já estabelecida.
+
+## Resultado final
+
+Rodado em `scripts/analyze-misael-concepts.mts`: 3,06s, pico de RSS 0,35GB. Verificação de equivalência (λ_extra=0 ≡ controle "deck sozinho") deu diferença = 0 exata nas duas variantes.
+
+| Variante | logLoss (teste) | Δ vs base | IC95% (bootstrap 3.000x) | Favorável? |
+|---|---|---|---|---|
+| Base (FSRS+deck) | 0,4792 | — | — | — |
+| Base + lista fixa (LLM) | 0,5221 | -0,0431 | [-0,0553, -0,0309] | **Não** |
+| Base + tópico (subbaralho) | 0,5003 | -0,0211 | [-0,0306, -0,0119] | **Não** |
+
+**Nenhuma das duas variantes passou no bootstrap — nenhuma permutação foi rodada** (regra pré-definida: para aqui se o IC não favorecer). Os recortes suplementares (só cartões com conceito da lista, n=1.225; só cartões com subbaralho real, n=1.531) confirmam a mesma direção (Δ=-0,0689 e Δ=-0,0237, respectivamente, ambos desfavoráveis).
+
+**Este é o resultado final desta linha de teste**: nem a lista fixa gerada por LLM nem o tópico (subbaralho) melhoram sobre o nó de baralho sozinho — o mesmo padrão já visto com o vocabulário por regra em `MISAEL_PROTOCOL.md`. Em todos os três testes de conceito nos baralhos do Misael (vocabulário, lista fixa por LLM, tópico), o nó de baralho sozinho continua sendo o melhor sinal disponível.
