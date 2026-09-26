@@ -85,3 +85,17 @@ Dado que o FSRS puro é uma baseline fraca aqui (perde para a constante) mas o n
 - **Nova variante**: FSRS + nó por baralho + vocabulário sem funcionais, todos no mesmo grafo por cartão (`[deck:X, palavra1, palavra2, ...]`), com a mesma normalização por média (peso = `λ / total de rótulos do cartão`, incluindo o rótulo de deck nessa contagem).
 - **Novo critério de sucesso**: a variante vence a nova base com IC95% do bootstrap (por cartão) inteiramente a favor, **e** uma permutação que embaralha **só a atribuição de vocabulário** (o rótulo de deck permanece fixo, não embaralhado, em cada permutação) dá p < 0,05, refazendo a busca em grade a cada permutação.
 - As variantes/controles originais (principal sozinha, deck sozinho, notetype sozinho, global, e a comparação por embedding, ainda pendente) continuam sendo reportadas como informação suplementar, não fazem mais parte do critério de sucesso.
+
+### 5. Correção: λ separados para deck e vocabulário na variante combinada
+
+Uma rodada preliminar usava um único `λ` compartilhado entre o rótulo de deck e as palavras de vocabulário no mesmo grafo — a contagem de rótulos usada para a média (`λ / total de rótulos`) incluía o rótulo de deck, diluindo seu peso conforme o cartão tinha mais palavras. **Corrigido**: `lambdaDeck` e `lambdaVocab` são hiperparâmetros independentes, cada um com sua própria grade (`{0, 0.25, 0.5, 1, 2}`), grade conjunta 4D (`priorVariance × driftPerDay × λ_deck × λ_vocab`, 100 combinações). A normalização por média se aplica só dentro do grupo de vocabulário (peso de cada palavra = `λ_vocab / número de palavras do cartão`); o rótulo de deck usa `λ_deck` diretamente, sem diluição.
+
+Verificação de equivalência (pedida antes de aceitar o resultado): com `λ_vocab=0` e os mesmos `priorVariance`/`driftPerDay`/`λ_deck` do controle "deck sozinho", a variante combinada precisa reproduzir exatamente o controle "deck sozinho" no teste. **Uma primeira tentativa falhou** (diferença ponto-a-ponto de até 0,44): cartões sem texto útil (contentless, ausentes de `deckByCard`) recebiam um rótulo `deck:undefined` na variante combinada, mas eram tratados como "sem links → previsão = FSRS puro" no controle "deck sozinho". **Corrigido** para a variante combinada também cair no fallback "sem links" quando o cartão não tem baralho atribuído, igual às outras variantes. Após a correção: diferença ponto-a-ponto = 0 exatamente.
+
+## Resultado final da emenda (item 4 + 5 acima)
+
+Com o bug do item 5 corrigido e confirmado (diferença = 0), o bootstrap por cartão (3.000 iterações, o número final, não um ensaio) deu: **combinada (FSRS+deck+vocabulário) vs nova base (FSRS+deck) → Δ=-0,0046, IC95%=[-0,0074, -0,0016]** — inteiramente contrário à variante (a base sozinha vence, com margem pequena mas estatisticamente clara, IC não cruza zero).
+
+**Por regra definida antes de ver este resultado**: como o IC do bootstrap não favorece a variante, as 1000 permutações completas não foram rodadas (não fariam a variante passar no critério, que já exige as duas condições — IC a favor E p<0,05 — e a primeira já falhou). **Este é o resultado final da emenda**: adicionar vocabulário sem funcionais por cima do sinal de baralho não melhora a previsão neste conjunto de baralhos — o nó por baralho sozinho já captura o essencial do sinal disponível, e o vocabulário, na melhor configuração de hiperparâmetros encontrada, ainda piora ligeiramente.
+
+Pendente: a comparação com vizinhos por embedding (`embed-misael.mts`, ainda não aprovado para rodar) não entra nesta conclusão.
