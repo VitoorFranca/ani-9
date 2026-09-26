@@ -19,6 +19,7 @@
     "@open-spaced-repetition/binding": "0.5.0",
     "better-sqlite3": "13.0.3",
     "fflate": "0.8.3",
+    "hyparquet": "1.31.1",
     "ts-fsrs": "5.4.2"
   },
   "devDependencies": {
