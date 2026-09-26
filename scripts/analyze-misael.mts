@@ -10,7 +10,7 @@ import { FSRSAlgorithm, generatorParameters } from "ts-fsrs";
 import { replayAll, splitChronological, optimizeParameters } from "../src/fsrs/index.ts";
 import type { ReplayedReview } from "../src/fsrs/replay.ts";
 import { extractVocabularyConcepts, PORTUGUESE_FUNCTION_WORDS } from "../src/concepts/vocabulary.ts";
-import { GraphBayesianModel, type WeightedLink } from "../src/model/index.ts";
+import { GraphBayesianModel, buildCombinedLinks, type WeightedLink } from "../src/model/index.ts";
 import { logLoss, auc, bootstrapLogLossDelta, constantBaselinePredictions, type ScoredReview } from "../src/eval/index.ts";
 import type { Review } from "../src/ingest/types.ts";
 import type { NormalizedCard } from "../src/content/types.ts";
@@ -287,21 +287,15 @@ checkMemory("after global control");
 
 interface CombinedHp { priorVariance: number; driftPerDay: number; lambdaDeck: number; lambdaVocab: number }
 
-// Cards absent from deckByCard are contentless/excluded (not in allCards) —
-// every other variant (main/deck/notetype/global) falls back to raw FSRS
-// (no links) for such cards via `names ?? []` -> empty links. A preliminary
-// run found this function DIDN'T: it always attached a deck link (as
-// "deck:undefined" for these cards), so with lambdaVocab=0 it still
-// differed from the standalone deck model by ~0.44 on some predictions.
-// Fixed by returning no links at all when the card has no deck assignment,
-// matching every other variant's fallback exactly.
+// Centralized in src/model/bayesian.ts (buildCombinedLinks) after this exact
+// bug -- a contentless/excluded card getting a spurious "deck:undefined"
+// link instead of falling back to raw FSRS -- was found here first and then
+// reintroduced independently in a later script.
 function combinedLinks(cardId: number, hp: CombinedHp, vocabByCard: ReadonlyMap<number, string[]>): WeightedLink<string>[] {
-  const deck = deckByCard.get(cardId);
-  if (deck === undefined) return [];
-  const vocab = vocabByCard.get(cardId) ?? [];
-  const links: WeightedLink<string>[] = [{ id: `deck:${deck}`, weight: hp.lambdaDeck }];
-  for (const name of vocab) links.push({ id: name, weight: hp.lambdaVocab / vocab.length });
-  return links;
+  return buildCombinedLinks(deckByCard.get(cardId), vocabByCard.get(cardId) ?? [], {
+    lambdaBase: hp.lambdaDeck,
+    lambdaExtra: hp.lambdaVocab,
+  });
 }
 
 function scoreCombinedLogLoss(hp: CombinedHp, trainOnly: boolean, vocabByCard: ReadonlyMap<number, string[]> = mainConceptsByCard): number {

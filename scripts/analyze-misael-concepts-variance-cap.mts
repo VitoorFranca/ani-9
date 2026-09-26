@@ -11,7 +11,7 @@ import { buildNormalizedCards } from "../src/content/build.ts";
 import { FSRSAlgorithm, generatorParameters } from "ts-fsrs";
 import { replayAll, splitChronological, optimizeParameters } from "../src/fsrs/index.ts";
 import type { ReplayedReview } from "../src/fsrs/replay.ts";
-import type { WeightedLink } from "../src/model/index.ts";
+import { buildCombinedLinks, type WeightedLink } from "../src/model/index.ts";
 import { logLoss, auc, bootstrapLogLossDelta, type ScoredReview } from "../src/eval/index.ts";
 import type { Review } from "../src/ingest/types.ts";
 import type { NormalizedCard } from "../src/content/types.ts";
@@ -155,15 +155,11 @@ const LAMBDA_GRID = [0, 0.25, 0.5, 1, 2];
 
 // --- Base (FSRS+deck), recomputed with the variance-ceiled model. ---
 interface ConceptHp { priorVariance: number; driftPerDay: number; lambda: number }
-// Cards absent from deckByCard (contentless, excluded from allCards) must
-// fall back to raw FSRS (no links) -- matching combinedLinks exactly.
-// A prior run without this check produced a deck:undefined link with
-// nonzero weight for those cards here, while combinedLinks correctly
-// no-opped them, breaking the lambdaExtra=0 equivalence check (max diff
-// 0.1067 instead of 0).
+// Centralized in src/model/bayesian.ts (buildCombinedLinks) after this exact
+// bug (contentless card -> spurious "deck:undefined" link) broke the
+// lambdaExtra=0 equivalence check here once already (max diff 0.1067).
 function deckLinks(cardId: number, hp: ConceptHp): WeightedLink<string>[] {
-  const deck = deckByCard.get(cardId);
-  return deck === undefined ? [] : [{ id: `deck:${deck}`, weight: hp.lambda }];
+  return buildCombinedLinks(deckByCard.get(cardId), [], { lambdaBase: hp.lambda, lambdaExtra: 0 });
 }
 function scoreDeckLogLoss(hp: ConceptHp, trainOnly: boolean): number {
   const model = new VarianceCeiledModel({ priorVariance: hp.priorVariance, driftPerDay: hp.driftPerDay });
@@ -216,12 +212,10 @@ checkMemory("after capped base");
 // --- Combined (deck + extra), variance-ceiled, separate lambdas. ---
 interface CombinedHp { priorVariance: number; driftPerDay: number; lambdaDeck: number; lambdaExtra: number }
 function combinedLinks(cardId: number, hp: CombinedHp, extraByCard: ReadonlyMap<number, string[]>): WeightedLink<string>[] {
-  const deck = deckByCard.get(cardId);
-  if (deck === undefined) return [];
-  const extra = extraByCard.get(cardId) ?? [];
-  const links: WeightedLink<string>[] = [{ id: `deck:${deck}`, weight: hp.lambdaDeck }];
-  for (const name of extra) links.push({ id: name, weight: hp.lambdaExtra / extra.length });
-  return links;
+  return buildCombinedLinks(deckByCard.get(cardId), extraByCard.get(cardId) ?? [], {
+    lambdaBase: hp.lambdaDeck,
+    lambdaExtra: hp.lambdaExtra,
+  });
 }
 function scoreCombinedLogLoss(hp: CombinedHp, trainOnly: boolean, extraByCard: ReadonlyMap<number, string[]>): number {
   const model = new VarianceCeiledModel({ priorVariance: hp.priorVariance, driftPerDay: hp.driftPerDay });

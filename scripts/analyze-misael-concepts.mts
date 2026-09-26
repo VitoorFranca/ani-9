@@ -9,7 +9,7 @@ import { buildNormalizedCards } from "../src/content/build.ts";
 import { FSRSAlgorithm, generatorParameters } from "ts-fsrs";
 import { replayAll, splitChronological, optimizeParameters } from "../src/fsrs/index.ts";
 import type { ReplayedReview } from "../src/fsrs/replay.ts";
-import { GraphBayesianModel, type WeightedLink } from "../src/model/index.ts";
+import { GraphBayesianModel, buildCombinedLinks, type WeightedLink } from "../src/model/index.ts";
 import { logLoss, auc, bootstrapLogLossDelta, type ScoredReview } from "../src/eval/index.ts";
 import type { Review } from "../src/ingest/types.ts";
 import type { NormalizedCard } from "../src/content/types.ts";
@@ -187,13 +187,13 @@ checkMemory("after base");
 
 interface CombinedHp { priorVariance: number; driftPerDay: number; lambdaDeck: number; lambdaExtra: number }
 
+// Centralized in src/model/bayesian.ts (buildCombinedLinks) — see its doc
+// comment for the contentless-card fallback bug this guards against.
 function combinedLinks(cardId: number, hp: CombinedHp, extraByCard: ReadonlyMap<number, string[]>): WeightedLink<string>[] {
-  const deck = deckByCard.get(cardId);
-  if (deck === undefined) return [];
-  const extra = extraByCard.get(cardId) ?? [];
-  const links: WeightedLink<string>[] = [{ id: `deck:${deck}`, weight: hp.lambdaDeck }];
-  for (const name of extra) links.push({ id: name, weight: hp.lambdaExtra / extra.length });
-  return links;
+  return buildCombinedLinks(deckByCard.get(cardId), extraByCard.get(cardId) ?? [], {
+    lambdaBase: hp.lambdaDeck,
+    lambdaExtra: hp.lambdaExtra,
+  });
 }
 function scoreCombinedLogLoss(hp: CombinedHp, trainOnly: boolean, extraByCard: ReadonlyMap<number, string[]>): number {
   const model = new GraphBayesianModel<string>({ priorVariance: hp.priorVariance, driftPerDay: hp.driftPerDay });
