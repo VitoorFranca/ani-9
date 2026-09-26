@@ -100,3 +100,16 @@ Rodado em `scripts/analyze-misael-concepts.mts`: 3,06s, pico de RSS 0,35GB. Veri
 **Nenhuma das duas variantes passou no bootstrap — nenhuma permutação foi rodada** (regra pré-definida: para aqui se o IC não favorecer). Os recortes suplementares (só cartões com conceito da lista, n=1.225; só cartões com subbaralho real, n=1.531) confirmam a mesma direção (Δ=-0,0689 e Δ=-0,0237, respectivamente, ambos desfavoráveis).
 
 **Este é o resultado final desta linha de teste**: nem a lista fixa gerada por LLM nem o tópico (subbaralho) melhoram sobre o nó de baralho sozinho — o mesmo padrão já visto com o vocabulário por regra em `MISAEL_PROTOCOL.md`. Em todos os três testes de conceito nos baralhos do Misael (vocabulário, lista fixa por LLM, tópico), o nó de baralho sozinho continua sendo o melhor sinal disponível.
+
+## Emenda EXPLORATÓRIA registrada APÓS ver resultados: teto de variância
+
+Diagnóstico prévio (`scripts/diagnose-misael-concepts-worsening.mts`, não registrado como variante) achou: a piora no teste se concentra nos trimestres finais (2025-Q2 a Q4); a variância dos nós extra no momento da previsão é 2-3x maior no teste que no treino (drift acumulado por gaps reais longos e irregulares, mesmo padrão já diagnosticado no FSRS); e um piso experimental de variância em `priorVariance` (nunca deixar cair abaixo do prior) virou os dois Δ de teste para positivo. **Esse piso fica registrado só como observação — não é a variante testada aqui.**
+
+**Mudança única formalizada como emenda exploratória**: um **teto** de variância — `variância = min(variância, priorVariance)`, aplicado **depois do drift e antes da atualização Bayesiana**, sem alterar o piso original (`MIN_VARIANCE` de `bayesian.ts` continua sendo o único piso). Aplicado **a todos os nós igualmente — inclusive o nó de baralho na base**, não só aos nós extra. Implementado como uma classe local no script de diagnóstico/emenda (não altera `src/model/bayesian.ts`, que seguiria dando os resultados já registrados acima).
+
+**Protocolo completo aplicado às duas variantes** (lista fixa, tópico), contra uma **nova base recalculada com o mesmo teto de variância** (FSRS + baralho com teto, própria busca em grade 3D):
+- Verificação de equivalência: `lambdaExtra=0` (mesmos `priorVariance`/`driftPerDay`/`lambdaDeck` da nova base) precisa reproduzir exatamente a nova base (teto incluído).
+- Bootstrap por cartão, 3.000 iterações, contra a nova base. Se o IC não estiver inteiramente a favor, para aqui para aquela variante — resultado final exploratório.
+- Se o IC estiver a favor: permutação 1.000x (só do extra embaralhado, baralho fixo), refazendo a grade 4D a cada permutação.
+
+Resultado abaixo continua marcado como **exploratório** (decidido depois de ver o resultado registrado acima), não substitui o resultado final já registrado.
