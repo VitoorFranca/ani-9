@@ -113,3 +113,17 @@ Diagnóstico prévio (`scripts/diagnose-misael-concepts-worsening.mts`, não reg
 - Se o IC estiver a favor: permutação 1.000x (só do extra embaralhado, baralho fixo), refazendo a grade 4D a cada permutação.
 
 Resultado abaixo continua marcado como **exploratório** (decidido depois de ver o resultado registrado acima), não substitui o resultado final já registrado.
+
+### Resultado exploratório
+
+Uma primeira tentativa achou um bug real na verificação de equivalência (diferença máx=0,1067, não 0): a nova base com teto (`scoreDeckLogLoss`/`evalDeckModel`) adicionava o nó de baralho incondicionalmente, mesmo para cartões sem baralho atribuído (contentless), diferente de `combinedLinks`, que corretamente cai no fallback "sem links". Corrigido (mesmo padrão de bug já visto antes no fallback do resultado registrado) — depois da correção, a verificação deu diferença = 0 exata nas duas variantes.
+
+Rodado em `scripts/analyze-misael-concepts-variance-cap.mts`: 2,66s, pico de RSS 0,19GB.
+
+| | logLoss (teste) | Δ vs base com teto | IC95% (bootstrap 3.000x) | Favorável? |
+|---|---|---|---|---|
+| Nova base com teto (FSRS+deck) | 0,4835 | — | — | — |
+| Base com teto + lista fixa | 0,4872 | -0,0037 | [-0,0062, -0,0012] | Não |
+| Base com teto + tópico | 0,4876 | -0,0041 | [-0,0065, -0,0018] | Não |
+
+**O teto de variância reduz muito a diferença** (de -0,0431/-0,0210 sem teto para -0,0037/-0,0041 com teto — a lacuna encolhe cerca de 10x), consistente com a hipótese mecanicista do diagnóstico (variância explodindo por drift em gaps reais longos), **mas não inverte o sinal**: as duas variantes continuam com IC desfavorável. Nenhuma permutação foi necessária (regra pré-definida: para se o IC não favorecer). **Este é o resultado exploratório final** — não muda o resultado final já registrado acima (sem teto), mas reforça que o mecanismo diagnosticado (variância explodindo por drift) é uma causa real e substancial da piora, mesmo não sendo suficiente sozinha para tornar as variantes vantajosas.
