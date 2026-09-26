@@ -127,3 +127,15 @@ Rodado em `scripts/analyze-misael-concepts-variance-cap.mts`: 2,66s, pico de RSS
 | Base com teto + tópico | 0,4876 | -0,0041 | [-0,0065, -0,0018] | Não |
 
 **O teto de variância reduz muito a diferença** (de -0,0431/-0,0210 sem teto para -0,0037/-0,0041 com teto — a lacuna encolhe cerca de 10x), consistente com a hipótese mecanicista do diagnóstico (variância explodindo por drift em gaps reais longos), **mas não inverte o sinal**: as duas variantes continuam com IC desfavorável. Nenhuma permutação foi necessária (regra pré-definida: para se o IC não favorecer). **Este é o resultado exploratório final** — não muda o resultado final já registrado acima (sem teto), mas reforça que o mecanismo diagnosticado (variância explodindo por drift) é uma causa real e substancial da piora, mesmo não sendo suficiente sozinha para tornar as variantes vantajosas.
+
+## Emenda EXPLORATÓRIA registrada APÓS ver o resultado de `MISAEL_SESSION_PROTOCOL.md`: nó de tópico de curto prazo
+
+Motivação: o teste de contágio de sessão (`MISAEL_SESSION_PROTOCOL.md`) achou um efeito de conceito que **não sobrevive ao placebo de ordem** — sugerindo que o que existe é correlação de dificuldade por tópico **dentro de uma mesma sessão de estudo**, simétrica no tempo, não memória de conceito persistente entre sessões (que é o que o teto de variância, acima, e o teste de tópico persistente original tentavam capturar). Este teste formaliza essa ideia como uma variante de log-loss agregado.
+
+**Mudança única**: um nó de tópico que **zera no início de cada sessão** e só acumula evidência **dentro dela** — implementado dando ao nó um identificador com prefixo da sessão (`${sessionId}::${tópico}`), não alterando `GraphBayesianModel` (o mesmo nó nominal em sessões diferentes vira, para o modelo, nós completamente diferentes, cada um começando do zero). Sessão definida exatamente como em `MISAEL_SESSION_PROTOCOL.md` (gap <30min, fluxo pooled de todas as revisões).
+
+- **Base**: FSRS + nó por baralho (persistente, igual ao já registrado).
+- **Variante**: base + nó de tópico de curto prazo, com `lambdaDeck`/`lambdaExtra` separados, mesma grade 4D, mesma verificação de equivalência (`lambdaExtra=0` idêntico à base, tolerância <1e-12).
+- **Avaliação**: log-loss no split de teste padrão (70/30), revisões espaçadas (`isTestEval`) — mesma convenção do resto deste documento.
+- **Bootstrap por SESSÃO** (não por cartão) — `bootstrapLogLossDeltaByGroup` com o `sessionId` de cada revisão de teste como grupo, 3.000 iterações, seed 42.
+- Permutação não faz parte desta rodada exploratória (só bootstrap, por enquanto).
