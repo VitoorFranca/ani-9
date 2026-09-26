@@ -127,22 +127,46 @@ export function bootstrapLogLossDelta(
   comparisonPredictions: readonly ScoredReview[],
   opts: { iterations?: number; seed?: number } = {},
 ): BootstrapResult {
+  return bootstrapLogLossDeltaByGroup(
+    referencePredictions,
+    comparisonPredictions,
+    referencePredictions.map((r) => r.cardId),
+    opts,
+  );
+}
+
+/**
+ * Same resampling logic as {@link bootstrapLogLossDelta}, but grouped by an
+ * arbitrary caller-supplied key (parallel array, one per review) instead of
+ * `cardId` — e.g. resampling by USER when aggregating a multi-user dataset
+ * (KARL), where reviews of the same user are correlated and the unit of
+ * independence is the user, not the card.
+ */
+export function bootstrapLogLossDeltaByGroup<G>(
+  referencePredictions: readonly ScoredReview[],
+  comparisonPredictions: readonly ScoredReview[],
+  groupIds: readonly G[],
+  opts: { iterations?: number; seed?: number } = {},
+): BootstrapResult {
   if (referencePredictions.length !== comparisonPredictions.length) {
     throw new Error("referencePredictions and comparisonPredictions must be aligned (same length)");
+  }
+  if (referencePredictions.length !== groupIds.length) {
+    throw new Error("groupIds must be aligned with the predictions (same length)");
   }
 
   const iterations = opts.iterations ?? 2000;
   const random = mulberry32(opts.seed ?? 42);
 
-  const indicesByCard = new Map<number, number[]>();
-  referencePredictions.forEach((r, idx) => {
-    const forCard = indicesByCard.get(r.cardId);
-    if (forCard) forCard.push(idx);
-    else indicesByCard.set(r.cardId, [idx]);
+  const indicesByGroup = new Map<G, number[]>();
+  groupIds.forEach((g, idx) => {
+    const forGroup = indicesByGroup.get(g);
+    if (forGroup) forGroup.push(idx);
+    else indicesByGroup.set(g, [idx]);
   });
-  const cardIds = [...indicesByCard.keys()];
+  const groups = [...indicesByGroup.keys()];
 
-  if (cardIds.length === 0) {
+  if (groups.length === 0) {
     return { meanDelta: 0, ci95: [0, 0], iterations: 0 };
   }
 
@@ -151,9 +175,9 @@ export function bootstrapLogLossDelta(
     const sampleReference: ScoredReview[] = [];
     const sampleComparison: ScoredReview[] = [];
 
-    for (let k = 0; k < cardIds.length; k++) {
-      const pickedCard = cardIds[Math.floor(random() * cardIds.length)]!;
-      for (const idx of indicesByCard.get(pickedCard)!) {
+    for (let k = 0; k < groups.length; k++) {
+      const pickedGroup = groups[Math.floor(random() * groups.length)]!;
+      for (const idx of indicesByGroup.get(pickedGroup)!) {
         sampleReference.push(referencePredictions[idx]!);
         sampleComparison.push(comparisonPredictions[idx]!);
       }

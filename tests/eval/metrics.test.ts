@@ -3,6 +3,7 @@ import {
   accuracy,
   auc,
   bootstrapLogLossDelta,
+  bootstrapLogLossDeltaByGroup,
   calibrationRmse,
   constantBaselinePredictions,
   logLoss,
@@ -158,5 +159,47 @@ describe("bootstrapLogLossDelta", () => {
 
   it("throws when the two prediction sets aren't aligned", () => {
     expect(() => bootstrapLogLossDelta([{ cardId: 1, p: 0.5, y: 1 }], [])).toThrow();
+  });
+});
+
+describe("bootstrapLogLossDeltaByGroup", () => {
+  it("agrees with bootstrapLogLossDelta when the group key is cardId", () => {
+    const reference: ScoredReview[] = Array.from({ length: 15 }, (_, i) => ({
+      cardId: i,
+      p: 0.6,
+      y: (i % 2) as 0 | 1,
+    }));
+    const comparison: ScoredReview[] = reference.map((r) => ({ ...r, p: 0.4 }));
+
+    const byCard = bootstrapLogLossDelta(reference, comparison, { iterations: 200, seed: 5 });
+    const byGroup = bootstrapLogLossDeltaByGroup(
+      reference,
+      comparison,
+      reference.map((r) => r.cardId),
+      { iterations: 200, seed: 5 },
+    );
+    expect(byGroup).toEqual(byCard);
+  });
+
+  it("resamples whole users together, not individual reviews", () => {
+    // Two users, each contributing many reviews; the group (user) is the
+    // unit of resampling so every bootstrap sample is a whole number of
+    // users' reviews, never a fractional mix.
+    const reference: ScoredReview[] = [
+      ...Array.from({ length: 20 }, (_, i) => ({ cardId: i, p: 0.5, y: (i % 2) as 0 | 1 })),
+      ...Array.from({ length: 20 }, (_, i) => ({ cardId: 100 + i, p: 0.5, y: (i % 2) as 0 | 1 })),
+    ];
+    const comparison: ScoredReview[] = reference.map((r) => ({ ...r, p: r.y === 1 ? 0.9 : 0.1 }));
+    const groupIds = [...Array(20).fill("userA"), ...Array(20).fill("userB")];
+
+    const result = bootstrapLogLossDeltaByGroup(reference, comparison, groupIds, { iterations: 300, seed: 9 });
+    expect(result.meanDelta).toBeGreaterThan(0);
+    expect(result.ci95[0]).toBeGreaterThan(0);
+  });
+
+  it("throws when groupIds isn't aligned with the predictions", () => {
+    expect(() =>
+      bootstrapLogLossDeltaByGroup([{ cardId: 1, p: 0.5, y: 1 }], [{ cardId: 1, p: 0.5, y: 1 }], []),
+    ).toThrow();
   });
 });
