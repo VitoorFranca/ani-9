@@ -4,6 +4,8 @@ Investiga se uma camada de conceitos, combinada ao `R` do FSRS, prevê a recorda
 
 **Veredito atual: sem evidência de transferência por conteúdo neste baralho.** O único efeito estatisticamente significativo encontrado é explicado por um controle trivial (o notetype do cartão), não por conceitos ou vocabulário compartilhado — ver relatório.
 
+Um segundo teste, no dataset público KARL (`nbalepur/KARL`), foi encerrado antes de rodar a análise principal por falta de poder estatístico no regime de revisão espaçada (só 6 de 543 usuários tinham revisões suficientes com intervalo ≥1 dia) — inconclusivo, não um resultado a favor ou contra. Ver [`KARL_REPORT.md`](./KARL_REPORT.md) e [`KARL_PROTOCOL.md`](./KARL_PROTOCOL.md).
+
 ## Como rodar
 
 ```bash

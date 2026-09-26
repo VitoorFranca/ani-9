@@ -2,6 +2,8 @@
 
 Registrado **antes** de rodar qualquer variante ou controle, conforme instrução explícita do usuário. Nada aqui deve mudar depois de ver resultados.
 
+**Este teste foi encerrado antes da análise principal ser executada — ver [`KARL_REPORT.md`](./KARL_REPORT.md).** Este arquivo documenta o protocolo e as duas emendas feitas antes de ver qualquer resultado sobre a hipótese (filtro de "avaliável" inviável, depois baseline do FSRS degenerada); fica como registro histórico de metodologia.
+
 ## Dataset
 
 - `nbalepur/KARL` (Hugging Face), split único `train`, 123.143 linhas, baixado em `data/karl/train-00000-of-00001.parquet` (não versionado).
@@ -55,6 +57,20 @@ Diferença de log-loss vs. a variante base, com IC95% do bootstrap **agregado po
 ## Critério de sucesso do teste KARL
 
 A variante principal (vocabulário sem funcionais) precisa vencer **as três**: (a) FSRS puro/otimizado, (b) o controle por deck, e (c) a variante de similaridade por embedding. Vencer só uma ou duas não conta como sucesso.
+
+## Emenda registrada antes de rodar a análise completa: baseline do FSRS degenerada em revisões no mesmo dia
+
+Verificado antes de rodar em escala: `forgetting_curve(0, S) = 1` exatamente, para qualquer estabilidade — logo, com o tempo decorrido arredondado para dias inteiros (como no replay do `.apkg`), **toda revisão no mesmo dia recebe `predictedR=1`**, não importa o resultado real. Confirmado em dados reais: usuário 46, 2.159 revisões no mesmo dia, `predictedR` = 1,0 em 100% delas, mas 703 dessas revisões (32,6%) foram erradas. Como ~91% das revisões avaliáveis do KARL são no mesmo dia, isso torna o FSRS uma baseline sem poder de discriminação (AUC≈0,50) para a maior parte dos dados — não um bug de implementação, mas uma consequência de arredondar o tempo para dias inteiros quando a maioria das repetições do KARL acontece dentro do mesmo dia.
+
+**Correção fixada:** `replayCardFractional`/`replayAllFractional` (`src/fsrs/replay.ts`) alimentam `next_state`/`forgetting_curve` com o tempo decorrido **fracionário** (`elapsedMs / MS_PER_DAY`, sem arredondar), em vez do valor arredondado usado por `replayCard`. A classificação em recortes (mesmo dia / ≥1 dia) continua usando o valor arredondado (`elapsedDays`) — só o `t` alimentado ao FSRS muda. Os parâmetros do FSRS continuam otimizados com `buildTrainingItems`/`optimizeParameters` inalterados (dias inteiros): mudar o formato de entrada do otimizador nativo (`fsrs-rs`) arriscaria um panic não capturável, o mesmo risco já documentado para itens com `delta_t=0`. A correção se aplica a todos os modelos igualmente (FSRS e todas as variantes/controles), pois todos consomem o mesmo `predictedR` gerado pelo replay fracionário.
+
+## Emenda: recorte principal passa a ser "intervalo ≥1 dia", com filtro de usuário próprio
+
+Registrado antes de rodar a análise completa, substituindo a definição de "recorte principal" (mas não a definição de "avaliável" em si, nem o filtro original de 78 usuários usado para relatar a proporção mesmo-dia/≥1-dia no dataset):
+
+- **Análise principal:** revisões com intervalo **≥1 dia** desde a revisão anterior do mesmo cartão, juntando todos os usuários com **≥20 revisões desse tipo** (novo filtro, mais permissivo que o anterior — o filtro de ≥200 avaliáveis/≥20 falhas no teste tornava a análise principal inviável, já que a maioria das revisões do KARL é no mesmo dia; ver contagem exata reportada antes de rodar). Bootstrap agregado por usuário.
+- **Análise secundária:** revisões no mesmo dia, com a ressalva explícita de que o FSRS (mesmo com a correção fracionária) não foi desenhado para esse regime de repetição — reportada para contexto, não para decidir a hipótese.
+- **O critério de sucesso (variante principal vence FSRS, controle por deck e variante de embedding) aplica-se só à análise principal (recorte ≥1 dia).**
 
 ## Grades de hiperparâmetros (fixadas antes de rodar, busca em grade só no treino de cada usuário)
 
