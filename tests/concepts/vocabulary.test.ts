@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractVocabularyConcepts } from "../../src/concepts/vocabulary.js";
+import { extractVocabularyConcepts, PORTUGUESE_FUNCTION_WORDS } from "../../src/concepts/vocabulary.js";
 
 describe("extractVocabularyConcepts", () => {
   it("extracts each distinct word as its own concept with weight 1", () => {
@@ -45,5 +45,26 @@ describe("extractVocabularyConcepts", () => {
     expect(concepts.some((c) => c.name === "the")).toBe(false);
     expect(concepts.some((c) => c.name === "and")).toBe(false);
     expect(concepts.map((c) => c.name).sort()).toEqual(["cat", "dog"]);
+  });
+
+  it("uses a custom function-word set (e.g. Portuguese) instead of the English default", () => {
+    const concepts = extractVocabularyConcepts("o cachorro e o gato", {
+      excludeFunctionWords: true,
+      functionWords: PORTUGUESE_FUNCTION_WORDS,
+    });
+    expect(concepts.map((c) => c.name).sort()).toEqual(["cachorro", "gato"]);
+  });
+
+  it("does not drop Portuguese function words when the English set is used (default)", () => {
+    const concepts = extractVocabularyConcepts("o cachorro e o gato", { excludeFunctionWords: true });
+    expect(concepts.map((c) => c.name).sort()).toEqual(["cachorro", "e", "gato", "o"]);
+  });
+
+  it("tokenizes accented Portuguese words correctly", () => {
+    const concepts = extractVocabularyConcepts("A administração pública é ótima", {
+      excludeFunctionWords: true,
+      functionWords: PORTUGUESE_FUNCTION_WORDS,
+    });
+    expect(concepts.map((c) => c.name).sort()).toEqual(["administração", "pública", "ótima"]);
   });
 });
