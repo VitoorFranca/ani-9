@@ -8,8 +8,8 @@ Reproduzir, num dataset real independente e maior, o teste já feito no `English
 
 ## O que foi feito
 
-1. **Dataset baixado e inspecionado** (ver [`KARL_PROTOCOL.md`](./KARL_PROTOCOL.md)): licença ausente (não encontrada na API do HF, no README do dataset, nem em repositório associado — sinalizado, não bloqueou o uso para teste interno). `card_text` é só a pergunta (estilo quiz bowl), nunca a resposta.
-2. **Respostas recuperadas via fonte externa**: `facts.csv` (`Pinafore/fact-repetition`, MIT license), casando 18.662/18.663 `card_id`s do KARL por texto idêntico. Decisão pré-registrada: vocabulário usa pergunta+resposta.
+1. **Dataset baixado e inspecionado** (ver [`KARL_PROTOCOL.md`](./KARL_PROTOCOL.md)): a cópia no Hugging Face (`nbalepur/KARL`) não tem licença própria (ausente da API do HF e do README do dataset); o repositório oficial citado no paper do KARL, `github.com/Pinafore/fact-repetition`, é licença MIT. Uso interno de pesquisa. `card_text` é só a pergunta (estilo quiz bowl), nunca a resposta.
+2. **Respostas recuperadas via fonte externa**: `facts.csv` (`Pinafore/fact-repetition`, o mesmo repositório oficial, MIT license), casando 18.662/18.663 `card_id`s do KARL por texto idêntico. Decisão pré-registrada: vocabulário usa pergunta+resposta.
 3. **Adaptador de ingestão** (`src/ingest/karl.ts`, testado): mapeia registros do KARL para os tipos de domínio (`Review`, `NormalizedCard`) já usados pelo resto do pipeline, com `correto→Good`/`incorreto→Again`.
 4. **Duas falhas de protocolo descobertas e corrigidas ANTES de rodar qualquer variante** (ambas documentadas em detalhe no `KARL_PROTOCOL.md`, com a numeração exata de usuários/revisões em cada etapa):
    - A definição de "revisão avaliável" herdada do pipeline do `.apkg` (gap ≥1 dia) dava **0 de 543 usuários** qualificados — corrigida para "qualquer revisão após a 1ª exposição ao cartão", dando 78/543.

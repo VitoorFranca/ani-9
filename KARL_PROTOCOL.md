@@ -7,11 +7,11 @@ Registrado **antes** de rodar qualquer variante ou controle, conforme instruçã
 ## Dataset
 
 - `nbalepur/KARL` (Hugging Face), split único `train`, 123.143 linhas, baixado em `data/karl/train-00000-of-00001.parquet` (não versionado).
-- **Licença: desconhecida.** Ausente da API do HF, do `README.md` do dataset (só front-matter YAML) e não há repositório associado (`github.com/nbalepur/KARL` retorna 404).
+- **Licença: a cópia no Hugging Face (`nbalepur/KARL`) não tem licença própria** — ausente da API do HF e do `README.md` do dataset (só front-matter YAML); `github.com/nbalepur/KARL` retorna 404, não é o repositório oficial. **O repositório oficial citado no paper do KARL é `github.com/Pinafore/fact-repetition`, licença MIT.** Uso aqui é interno de pesquisa.
 - `card_text` é só a pergunta/pista (estilo quiz bowl/Jeopardy!), nunca a resposta. `response` é booleano puro, sem nulos: `true`=acertou (71,8%), `false`=errou (28,2%).
 - 543 usuários distintos, 60 decks distintos, 18.663 `card_id` distintos.
 
-## Fonte de respostas — `facts.csv` (`Pinafore/fact-repetition`, MIT license para o código)
+## Fonte de respostas — `facts.csv` (`Pinafore/fact-repetition`, repositório oficial citado no paper do KARL, MIT license)
 
 - Clonado via `git lfs pull -I facts.csv` de `github.com/Pinafore/fact-repetition`, copiado para `data/karl/facts.csv` (não versionado).
 - **18.662 de 18.663 `card_id`s do KARL (99,995%) batem com `fact_id` de `facts.csv`**, com texto de pergunta idêntico caractere a caractere em todas as amostras verificadas. O único `card_id` sem match (`234825`) usa fallback de só-pergunta.
