@@ -22,4 +22,13 @@ No Misael, "baralho" (nó da base) era o arquivo `.apkg` de origem (3 arquivos =
 
 ## Relato
 
-Δ log-loss, IC95%, AUC (base e variante), tempo de execução e pico de memória.
+Rodado em `scripts/analyze-candy-synthetic-test.mts`: **2,07s, pico de RSS 0,41GB.** Verificação de equivalência: diferença = 0 exata.
+
+| | logLoss (teste, n=13.562) | AUC |
+|---|---|---|
+| Base (FSRS+baralho, grid escolheu `lambda=0`) | 0,4567 | 0,5577 |
+| Variante (tópico de curto prazo, hiperparâmetros congelados) | 0,4642 | 0,5556 |
+
+**Δ log-loss (bootstrap por sessão, 3000x) = -0,0075, IC95%=[-0,0100, -0,0050]** — inteiramente contrário à variante. Não passa.
+
+**Leitura**: resultado negativo, como esperado para dados sintéticos sem a estrutura de correlação de dificuldade por tópico dentro da sessão que o modelo tenta capturar (a própria base descartou o nó de baralho, `lambda=0`; AUC de ambos os modelos fica perto do acaso, ~0,55-0,56). Isso não invalida nem confirma o achado do Misael — só mostra que o mecanismo não produz um resultado positivo por padrão em qualquer dado, o que é consistente com (mas não prova) o achado do Misael não ser um artefato genérico do método.
