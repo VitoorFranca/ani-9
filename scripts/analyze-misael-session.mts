@@ -1,6 +1,7 @@
-// MISAEL_SESSION_PROTOCOL.md, including the same-deck supplementary cut
-// amendment. Computes counts for both cuts, then residuals/effects/
-// bootstrap-by-session for both. No API calls (reads cached classification).
+// MISAEL_SESSION_PROTOCOL.md + verification requests before interpreting the
+// positive result: card:note ratio + same-note exclusion, component effects
+// with their own CIs, an order-reversal placebo, and a per-deck breakdown.
+// The registered success criterion does not change. No API calls.
 import { readdir, readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { ingestApkgFile, openApkgDatabase } from "../src/ingest/index.ts";
@@ -21,7 +22,7 @@ const BOOTSTRAP_ITERATIONS = 3000;
 const BOOTSTRAP_SEED = 42;
 
 // ---------------------------------------------------------------------------
-// Ingest (same as analyze-misael-concepts.mts).
+// Ingest, plus per-deck card:note ratio (1. verificação).
 // ---------------------------------------------------------------------------
 
 const files = (await readdir(DIR)).filter((f) => f.endsWith(".apkg")).sort();
@@ -29,6 +30,10 @@ const allReviews: Review[] = [];
 const allCards = new Map<number, NormalizedCard>();
 const deckByCard = new Map<number, string>();
 const topicByCard = new Map<number, string>();
+
+console.log("=".repeat(78));
+console.log("1. Razão cartão:nota por baralho");
+console.log("=".repeat(78));
 
 for (const file of files) {
   const buffer = await readFile(`${DIR}/${file}`);
@@ -47,6 +52,15 @@ for (const file of files) {
   const { collection, reviews } = await ingestApkgFile(`${DIR}/${file}`);
   const normalized = buildNormalizedCards(collection);
   const reviewedCardIds = new Set(reviews.map((r) => r.cardId));
+
+  const eligibleForDeck = normalized.filter((c) => !c.contentless && reviewedCardIds.has(c.cardId));
+  const distinctNotesAll = new Set(collection.cards.map((c) => c.noteId)).size;
+  const distinctNotesEligible = new Set(eligibleForDeck.map((c) => c.noteId)).size;
+  console.log(
+    `${file}: cartões totais=${collection.cards.length} notas totais=${distinctNotesAll} razão=${(collection.cards.length / distinctNotesAll).toFixed(3)}` +
+    ` | elegíveis=${eligibleForDeck.length} notas(elegíveis)=${distinctNotesEligible} razão(elegíveis)=${(eligibleForDeck.length / distinctNotesEligible).toFixed(3)}`,
+  );
+
   for (const c of normalized) {
     if (c.contentless || !reviewedCardIds.has(c.cardId)) continue;
     allCards.set(c.cardId, c);
@@ -57,18 +71,16 @@ for (const file of files) {
   }
   allReviews.push(...reviews);
 }
-console.log(`cartões elegíveis (pooled): ${allCards.size}`);
-console.log(`revisões totais (pooled, todos os cartões): ${allReviews.length}`);
+
+const noteIdByCard = new Map<number, number>([...allCards.entries()].map(([cardId, c]) => [cardId, c.noteId]));
 
 const listConceptsByCard = new Map<number, string[]>(
   JSON.parse(readFileSync(`${CACHE_DIR}/misael-classify-all.json`, "utf8")) as [number, string[]][],
 );
 
 // ---------------------------------------------------------------------------
-// FSRS + base (FSRS+deck) model, replayed continuously over ALL reviews, to
-// get includedInEval (B-is-spaced) and a prediction p for every review
-// (using only history strictly before it -- the online replay convention
-// already used throughout this project).
+// FSRS + base (FSRS+deck) model — same as before, unaffected by same-note
+// exclusion (which only affects PAIRING, not the base model itself).
 // ---------------------------------------------------------------------------
 
 const { train, test } = splitChronological(allReviews);
@@ -114,9 +126,7 @@ for (const priorVariance of PRIOR_VARIANCE_GRID) for (const driftPerDay of DRIFT
   const loss = scoreDeckLogLoss(hp);
   if (loss < deckGridBestLoss) { deckGridBestLoss = loss; deckGridBest = hp; }
 }
-console.log(`base (FSRS+deck) grid: ${JSON.stringify(deckGridBest)} trainLogLoss=${deckGridBestLoss.toFixed(4)}`);
 
-// Prediction p for EVERY review (not just test-period), continuous online replay.
 const baseModel = new GraphBayesianModel<string>({ priorVariance: deckGridBest!.priorVariance, driftPerDay: deckGridBest!.driftPerDay });
 const predictionByReviewId = new Map<number, number>();
 for (const r of eligible) {
@@ -140,9 +150,6 @@ for (const r of sortedAll) {
   sessioned.push({ review: r, sessionId: sessionCounter });
   lastTimestamp = r.id;
 }
-const totalSessions = sessionCounter + 1;
-console.log(`sessões detectadas (gap < 30min, todas as revisões): ${totalSessions}`);
-
 const eligibleBySession = new Map<number, SessionedReview[]>();
 for (const sr of sessioned) {
   if (!allCards.has(sr.review.cardId)) continue;
@@ -150,8 +157,6 @@ for (const sr of sessioned) {
   if (arr) arr.push(sr);
   else eligibleBySession.set(sr.sessionId, [sr]);
 }
-const sessionsWithEligiblePairs = [...eligibleBySession.values()].filter((arr) => arr.length >= 2).length;
-console.log(`sessões com >=2 revisões elegíveis (candidatas a par): ${sessionsWithEligiblePairs}`);
 
 function isRelated(cardA: number, cardB: number): boolean {
   if (topicByCard.get(cardA) === topicByCard.get(cardB)) return true;
@@ -161,67 +166,71 @@ function isRelated(cardA: number, cardB: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Pairs: related (shared by both cuts), unrelated-any (principal),
-// unrelated-same-deck (supplementary).
+// Pair construction, generalized: direction "before" (main/placebo-control)
+// or "after" (order-reversal placebo, verificação 3); excludeSameNote toggle
+// (verificação 1).
 // ---------------------------------------------------------------------------
 
-interface Pair { sessionId: number; bReviewId: number; aCorrect: boolean }
-const relatedPairs: Pair[] = [];
-const unrelatedAnyPairs: Pair[] = [];
-const unrelatedSameDeckPairs: Pair[] = [];
-let bCandidates = 0;
-let bSpacedCandidates = 0;
+interface Pair { sessionId: number; bReviewId: number; bCardId: number; aCorrect: boolean }
 
-for (const [sid, group] of eligibleBySession) {
-  for (let i = 0; i < group.length; i++) {
-    const b = group[i]!.review;
-    bCandidates++;
-    if (!includedInEvalByReviewId.get(b.id)) continue;
-    bSpacedCandidates++;
+function buildPairs(direction: "before" | "after", excludeSameNote: boolean) {
+  const relatedPairs: Pair[] = [];
+  const unrelatedAnyPairs: Pair[] = [];
+  const unrelatedSameDeckPairs: Pair[] = [];
+  let bCandidates = 0;
+  let bSpacedCandidates = 0;
+  let excludedSameNote = 0;
 
-    let bestRelated: Review | null = null;
-    let bestUnrelatedAny: Review | null = null;
-    let bestUnrelatedSameDeck: Review | null = null;
-    for (let j = i - 1; j >= 0; j--) {
-      const a = group[j]!.review;
-      if (b.id - a.id > PAIR_WINDOW_MS) break;
-      if (a.cardId === b.cardId) continue;
-      if (isRelated(a.cardId, b.cardId)) {
-        if (bestRelated === null || a.id > bestRelated.id) bestRelated = a;
-      } else {
-        if (bestUnrelatedAny === null || a.id > bestUnrelatedAny.id) bestUnrelatedAny = a;
-        if (deckByCard.get(a.cardId) === deckByCard.get(b.cardId)) {
-          if (bestUnrelatedSameDeck === null || a.id > bestUnrelatedSameDeck.id) bestUnrelatedSameDeck = a;
+  for (const [sid, group] of eligibleBySession) {
+    for (let i = 0; i < group.length; i++) {
+      const b = group[i]!.review;
+      bCandidates++;
+      if (!includedInEvalByReviewId.get(b.id)) continue;
+      bSpacedCandidates++;
+
+      let bestRelated: Review | null = null;
+      let bestUnrelatedAny: Review | null = null;
+      let bestUnrelatedSameDeck: Review | null = null;
+
+      const scanRange = direction === "before"
+        ? Array.from({ length: i }, (_, k) => i - 1 - k) // i-1, i-2, ..., 0
+        : Array.from({ length: group.length - i - 1 }, (_, k) => i + 1 + k); // i+1, i+2, ...
+
+      for (const j of scanRange) {
+        const a = group[j]!.review;
+        const gapMs = direction === "before" ? b.id - a.id : a.id - b.id;
+        if (gapMs > PAIR_WINDOW_MS) break; // monotonic in scan order
+        if (a.cardId === b.cardId) continue;
+        if (excludeSameNote && noteIdByCard.get(a.cardId) === noteIdByCard.get(b.cardId)) {
+          excludedSameNote++;
+          continue;
+        }
+        // "most recent"/"closest" candidate: for "before", largest a.id; for "after", smallest a.id.
+        const better = (candidate: Review | null) =>
+          candidate === null || (direction === "before" ? a.id > candidate.id : a.id < candidate.id);
+
+        if (isRelated(a.cardId, b.cardId)) {
+          if (better(bestRelated)) bestRelated = a;
+        } else {
+          if (better(bestUnrelatedAny)) bestUnrelatedAny = a;
+          if (deckByCard.get(a.cardId) === deckByCard.get(b.cardId) && better(bestUnrelatedSameDeck)) {
+            bestUnrelatedSameDeck = a;
+          }
         }
       }
+
+      if (bestRelated) relatedPairs.push({ sessionId: sid, bReviewId: b.id, bCardId: b.cardId, aCorrect: bestRelated.rating !== 1 });
+      if (bestUnrelatedAny) unrelatedAnyPairs.push({ sessionId: sid, bReviewId: b.id, bCardId: b.cardId, aCorrect: bestUnrelatedAny.rating !== 1 });
+      if (bestUnrelatedSameDeck) unrelatedSameDeckPairs.push({ sessionId: sid, bReviewId: b.id, bCardId: b.cardId, aCorrect: bestUnrelatedSameDeck.rating !== 1 });
     }
-
-    if (bestRelated) relatedPairs.push({ sessionId: sid, bReviewId: b.id, aCorrect: bestRelated.rating !== 1 });
-    if (bestUnrelatedAny) unrelatedAnyPairs.push({ sessionId: sid, bReviewId: b.id, aCorrect: bestUnrelatedAny.rating !== 1 });
-    if (bestUnrelatedSameDeck) unrelatedSameDeckPairs.push({ sessionId: sid, bReviewId: b.id, aCorrect: bestUnrelatedSameDeck.rating !== 1 });
   }
-}
 
-function reportCounts(label: string, related: Pair[], unrelated: Pair[]) {
-  const relCorrect = related.filter((p) => p.aCorrect).length;
-  const relWrong = related.filter((p) => !p.aCorrect).length;
-  const unrelCorrect = unrelated.filter((p) => p.aCorrect).length;
-  const unrelWrong = unrelated.filter((p) => !p.aCorrect).length;
-  console.log(`\n--- ${label} ---`);
-  console.log(`  pares totais: ${related.length + unrelated.length}`);
-  console.log(`  relacionados, A certo:      ${relCorrect}`);
-  console.log(`  relacionados, A errado:     ${relWrong}`);
-  console.log(`  não relacionados, A certo:  ${unrelCorrect}`);
-  console.log(`  não relacionados, A errado: ${unrelWrong}`);
+  return { relatedPairs, unrelatedAnyPairs, unrelatedSameDeckPairs, bCandidates, bSpacedCandidates, excludedSameNote };
 }
-
-console.log(`\ncandidatos a B (elegíveis, sessão com >=2 elegíveis): ${bCandidates}`);
-console.log(`candidatos a B espaçados (includedInEval): ${bSpacedCandidates}`);
-reportCounts("Recorte PRINCIPAL (não relacionados = qualquer baralho)", relatedPairs, unrelatedAnyPairs);
-reportCounts("Recorte SUPLEMENTAR (não relacionados = mesmo baralho)", relatedPairs, unrelatedSameDeckPairs);
 
 // ---------------------------------------------------------------------------
-// Residuals, effects, bootstrap by session.
+// Effects, components, bootstrap by session (generalized to bootstrap any
+// single statistic computed from resampled related/unrelated pair pools).
 // ---------------------------------------------------------------------------
 
 function residualOf(p: Pair): number {
@@ -245,7 +254,24 @@ function mulberry32(seed: number): () => number {
   return () => { state |= 0; state = (state + 0x6d2b79f5) | 0; let t = Math.imul(state ^ (state >>> 15), 1 | state); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
-function bootstrapConceptEffectBySession(related: Pair[], unrelated: Pair[]): { mean: number; ci95: [number, number] } {
+/**
+ * Bootstraps by session an arbitrary statistic of (resampled related pairs,
+ * resampled unrelated pairs). `unrelated` may be [] if the statistic
+ * ignores it (single-group effect).
+ *
+ * A resample can land zero pairs in a subgroup (e.g. Direito Administrativo
+ * has only 18 "não relacionados, A errado" pairs total, easily missed
+ * entirely when resampling whole sessions) -- `effect()` then divides by
+ * zero via `meanResidual([])` = NaN. A prior run let these NaNs into the
+ * sort, which silently produces an invalid (inverted lo > hi) percentile
+ * pair. Fixed here: NaN iterations are discarded before computing
+ * percentiles, and the discard count is reported.
+ */
+function bootstrapBySession(
+  related: Pair[],
+  unrelated: Pair[],
+  statistic: (related: Pair[], unrelated: Pair[]) => number,
+): { mean: number; ci95: [number, number]; discarded: number } {
   const relatedBySession = new Map<number, Pair[]>();
   for (const p of related) { const arr = relatedBySession.get(p.sessionId); if (arr) arr.push(p); else relatedBySession.set(p.sessionId, [p]); }
   const unrelatedBySession = new Map<number, Pair[]>();
@@ -253,7 +279,7 @@ function bootstrapConceptEffectBySession(related: Pair[], unrelated: Pair[]): { 
   const sessions = [...new Set([...relatedBySession.keys(), ...unrelatedBySession.keys()])];
 
   const random = mulberry32(BOOTSTRAP_SEED);
-  const deltas: number[] = [];
+  const rawValues: number[] = [];
   for (let iter = 0; iter < BOOTSTRAP_ITERATIONS; iter++) {
     const sampledRelated: Pair[] = [];
     const sampledUnrelated: Pair[] = [];
@@ -262,30 +288,87 @@ function bootstrapConceptEffectBySession(related: Pair[], unrelated: Pair[]): { 
       sampledRelated.push(...(relatedBySession.get(sid) ?? []));
       sampledUnrelated.push(...(unrelatedBySession.get(sid) ?? []));
     }
-    deltas.push(conceptEffect(sampledRelated, sampledUnrelated));
+    rawValues.push(statistic(sampledRelated, sampledUnrelated));
   }
-  deltas.sort((a, b) => a - b);
-  const lo = deltas[Math.floor(0.025 * deltas.length)]!;
-  const hi = deltas[Math.min(deltas.length - 1, Math.floor(0.975 * deltas.length))]!;
-  const mean = deltas.reduce((s, d) => s + d, 0) / deltas.length;
-  return { mean, ci95: [lo, hi] };
+  const values = rawValues.filter((v) => !Number.isNaN(v));
+  const discarded = rawValues.length - values.length;
+  values.sort((a, b) => a - b);
+  const lo = values[Math.floor(0.025 * values.length)]!;
+  const hi = values[Math.min(values.length - 1, Math.floor(0.975 * values.length))]!;
+  const mean = values.reduce((s, v) => s + v, 0) / values.length;
+  return { mean, ci95: [lo, hi], discarded };
 }
 
-console.log(`\n${"=".repeat(78)}\nResíduos, efeitos e bootstrap por sessão\n${"=".repeat(78)}`);
+function reportCounts(label: string, related: Pair[], unrelated: Pair[]) {
+  const relCorrect = related.filter((p) => p.aCorrect).length;
+  const relWrong = related.filter((p) => !p.aCorrect).length;
+  const unrelCorrect = unrelated.filter((p) => p.aCorrect).length;
+  const unrelWrong = unrelated.filter((p) => !p.aCorrect).length;
+  console.log(`  ${label}: pares=${related.length + unrelated.length} | rel/certo=${relCorrect} rel/errado=${relWrong} | não-rel/certo=${unrelCorrect} não-rel/errado=${unrelWrong}`);
+}
 
-for (const [label, unrelated] of [
-  ["PRINCIPAL (não relacionados = qualquer baralho)", unrelatedAnyPairs],
-  ["SUPLEMENTAR (não relacionados = mesmo baralho)", unrelatedSameDeckPairs],
-] as const) {
-  console.log(`\n--- ${label} ---`);
-  const effRelated = effect(relatedPairs);
+function reportFull(title: string, related: Pair[], unrelated: Pair[]) {
+  console.log(`\n--- ${title} ---`);
+  reportCounts("contagens", related, unrelated);
+  const effRelated = effect(related);
   const effUnrelated = effect(unrelated);
-  const concept = conceptEffect(relatedPairs, unrelated);
-  console.log(`efeito(relacionados) = ${effRelated.toFixed(4)}`);
-  console.log(`efeito(não relacionados) = ${effUnrelated.toFixed(4)}`);
-  console.log(`efeito de conceito = ${concept.toFixed(4)}`);
-  const boot = bootstrapConceptEffectBySession(relatedPairs, unrelated);
-  console.log(`bootstrap por sessão (${BOOTSTRAP_ITERATIONS}x): média=${boot.mean.toFixed(4)} CI95=[${boot.ci95[0].toFixed(4)}, ${boot.ci95[1].toFixed(4)}]`);
-  const success = concept < 0 && boot.ci95[1] < 0;
-  console.log(`sucesso (efeito negativo, IC inteiramente abaixo de zero)? ${success}`);
+  const concept = conceptEffect(related, unrelated);
+  const bootRelated = bootstrapBySession(related, [], (r) => effect(r));
+  const bootUnrelated = bootstrapBySession(unrelated, [], (r) => effect(r));
+  const bootConcept = bootstrapBySession(related, unrelated, conceptEffect);
+  console.log(`  efeito(relacionados)     = ${effRelated.toFixed(4)}  IC95=[${bootRelated.ci95[0].toFixed(4)}, ${bootRelated.ci95[1].toFixed(4)}]${bootRelated.discarded > 0 ? ` (${bootRelated.discarded}/${BOOTSTRAP_ITERATIONS} iterações descartadas por NaN)` : ""}`);
+  console.log(`  efeito(não relacionados) = ${effUnrelated.toFixed(4)}  IC95=[${bootUnrelated.ci95[0].toFixed(4)}, ${bootUnrelated.ci95[1].toFixed(4)}]${bootUnrelated.discarded > 0 ? ` (${bootUnrelated.discarded}/${BOOTSTRAP_ITERATIONS} iterações descartadas por NaN)` : ""}`);
+  console.log(`  efeito de conceito       = ${concept.toFixed(4)}  IC95=[${bootConcept.ci95[0].toFixed(4)}, ${bootConcept.ci95[1].toFixed(4)}]${bootConcept.discarded > 0 ? ` (${bootConcept.discarded}/${BOOTSTRAP_ITERATIONS} iterações descartadas por NaN)` : ""}`);
+  const success = concept < 0 && bootConcept.ci95[1] < 0;
+  console.log(`  sucesso (efeito negativo, IC inteiramente abaixo de zero)? ${success}`);
+}
+
+// ---------------------------------------------------------------------------
+// 1. Refeito excluindo pares A/B da mesma nota.
+// ---------------------------------------------------------------------------
+
+console.log(`\n${"=".repeat(78)}`);
+console.log("1 (continuação). Refeito excluindo pares A/B da mesma nota");
+console.log("=".repeat(78));
+
+const main = buildPairs("before", true);
+console.log(`candidatos a B espaçados: ${main.bSpacedCandidates} (de ${main.bCandidates})`);
+console.log(`candidatos A excluídos por serem da mesma nota que B: ${main.excludedSameNote}`);
+
+// ---------------------------------------------------------------------------
+// 2. Componentes com IC, nos dois recortes.
+// ---------------------------------------------------------------------------
+
+console.log(`\n${"=".repeat(78)}`);
+console.log("2. Componentes com IC (excluindo mesma nota)");
+console.log("=".repeat(78));
+reportFull("PRINCIPAL (não relacionados = qualquer baralho)", main.relatedPairs, main.unrelatedAnyPairs);
+reportFull("SUPLEMENTAR (não relacionados = mesmo baralho)", main.relatedPairs, main.unrelatedSameDeckPairs);
+
+// ---------------------------------------------------------------------------
+// 3. Placebo de ordem: A depois de B.
+// ---------------------------------------------------------------------------
+
+console.log(`\n${"=".repeat(78)}`);
+console.log("3. Placebo de ordem (A revisado DEPOIS de B, até 2h, mesma sessão)");
+console.log("=".repeat(78));
+
+const placebo = buildPairs("after", true);
+console.log(`candidatos a B espaçados: ${placebo.bSpacedCandidates}`);
+reportFull("PLACEBO — PRINCIPAL", placebo.relatedPairs, placebo.unrelatedAnyPairs);
+reportFull("PLACEBO — SUPLEMENTAR", placebo.relatedPairs, placebo.unrelatedSameDeckPairs);
+
+// ---------------------------------------------------------------------------
+// 4. Efeito por baralho (recorte principal, excluindo mesma nota).
+// ---------------------------------------------------------------------------
+
+console.log(`\n${"=".repeat(78)}`);
+console.log("4. Efeito por baralho (recorte principal, excluindo mesma nota)");
+console.log("=".repeat(78));
+
+for (const file of files) {
+  const relatedForDeck = main.relatedPairs.filter((p) => deckByCard.get(p.bCardId) === file);
+  const unrelatedForDeck = main.unrelatedAnyPairs.filter((p) => deckByCard.get(p.bCardId) === file);
+  console.log(`\n${file}`);
+  reportFull(`(B neste baralho)`, relatedForDeck, unrelatedForDeck);
 }
