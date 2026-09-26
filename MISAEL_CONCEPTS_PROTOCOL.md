@@ -55,3 +55,24 @@ A 1ª rodada de geração (amostra de 100 cartões/baralho, alvo de 30-80 concei
 - **Teto de custo total continua US$0,20** (já gasto: US$0,01217 da 1ª rodada).
 - **Estimativa da regeneração** (mesma metodologia, a partir de tamanho médio real de texto por baralho: ~297/279/271 caracteres): Língua Portuguesa ≈23.450 tokens de entrada, Direito Administrativo ≈26.000, Administração Pública ≈27.615; saída estimada com folga (~1.800 tokens/baralho, incerta sem o alvo numérico) → **≈ US$0,03 adicionais**, total acumulado estimado ≈ **US$0,04-0,05**, bem abaixo do teto de US$0,20.
 - **Relato pós-regeneração**: por baralho, número de conceitos e uma estimativa de cobertura baseada só nos exemplos citados na amostra (quantos cartões distintos da amostra são citados como exemplo de pelo menos 1 conceito, dividido pelo tamanho da amostra) — não é a cobertura real do baralho inteiro, que só é conhecida após a classificação (próxima etapa, ainda pendente de aprovação separada).
+
+## Emenda: variante extra de nó por tópico (subbaralho)
+
+Verificado sem API, antes da classificação: os 3 `.apkg` têm subbaralhos reais (nomes com separador `\x1f`, ex. `"04. Direito Administrativo" > "04.1 Noções, Orig, Fonte, Regimes; Princíp e Atos"`), lidos direto da tabela `decks` (não fazia parte do pipeline de ingestão existente, que só usava `did` numérico). Tags são irrelevantes (0-1,9% dos cartões, só a tag "leech").
+
+Cobertura por subbaralho, sobre cartões elegíveis:
+
+| Baralho | Sem subbaralho | Com subbaralho | Subbaralhos distintos |
+|---|---|---|---|
+| Língua Portuguesa | 216/270 (80,0%) | 54/270 (20,0%) | 5 |
+| Direito Administrativo | 2/982 (0,2%) | **980/982 (99,8%)** | 8 |
+| Administração Pública | 249/319 (78,1%) | 70/319 (21,9%) | 4 |
+| **Pooled** | 467/1.571 (29,7%) | **1.104/1.571 (70,3%)** | 17 |
+
+A cobertura pooled (70,3%) cruza o limiar de "alta" definido para acionar a variante extra — **mas é puxada quase inteiramente pelo Direito Administrativo** (99,8%); os outros dois baralhos têm cobertura baixa (20-22%, maioria dos cartões sem subtópico). Registrado explicitamente: a variante de tópico pode acabar sendo, na prática, largamente um efeito do Direito Administrativo sozinho, não um sinal de tópico genuíno e uniforme nos 3 baralhos — mesmo tipo de confundimento já visto no notetype do English.apkg.
+
+**Variante extra adicionada, mesmo protocolo de λ separados/bootstrap/permutação do teste de vocabulário e da lista fixa**:
+- **Tópico de um cartão** = caminho do subbaralho (`"baralho > subbaralho"`) quando o cartão está em algum subbaralho; senão, cai no próprio rótulo de baralho (`deck:X`) como valor de tópico — garante que todo cartão tenha um valor de tópico definido.
+- **Variante**: base (FSRS + nó por baralho) + nó por tópico, com `lambdaDeck`/`lambdaTopico` separados, mesma grade 4D.
+- **Verificação de equivalência**: com `lambdaTopico=0`, idêntica ao controle "deck sozinho" (mesmo procedimento e mesma tolerância <1e-12 já usados).
+- **Bootstrap 3.000x**; se o IC não estiver inteiramente a favor, para aqui, resultado final. Se estiver a favor, permutação 1.000x (só do tópico, deck fixo).
