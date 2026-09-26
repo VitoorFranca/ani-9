@@ -56,6 +56,15 @@ Diferença de log-loss vs. a variante base, com IC95% do bootstrap **agregado po
 
 A variante principal (vocabulário sem funcionais) precisa vencer **as três**: (a) FSRS puro/otimizado, (b) o controle por deck, e (c) a variante de similaridade por embedding. Vencer só uma ou duas não conta como sucesso.
 
+## Grades de hiperparâmetros (fixadas antes de rodar, busca em grade só no treino de cada usuário)
+
+- Variantes de conceito (principal, controle por deck, controle global): `priorVariance ∈ {0.25, 1}`, `driftPerDay ∈ {0.001, 0.01}`, `lambda ∈ {0, 0.25, 0.5, 1, 2}` — mesma grade do ablation do English.apkg, para comparabilidade direta. Sem self-link (cartão só se conecta ao(s) nó(s) de conceito).
+- Variante de comparação (vizinhos por embedding): mesma grade de `priorVariance`/`driftPerDay`, mais `tau ∈ {0.5, 0.7, 0.85, 0.95}` e `lambda ∈ {0, 0.25, 0.5, 1, 2}` (`rescaleSimilarity`), `k=5` vizinhos (mesmo default de `computeNeighborSets`). Self-link fixo em peso 1 (cartão sempre ligado a si mesmo), por convenção já testada em `bayesian.test.ts` — então mesmo com `lambda=0` este modelo não é um pass-through puro do FSRS (é recalibração por cartão sem transferência de vizinhos), diferente das variantes de conceito.
+
+## Escopo da permutação (1000x)
+
+A permutação testa se a atribuição cartão→rótulo carrega sinal genuíno, embaralhando essa atribuição **dentro de cada usuário** (nunca entre usuários) e refazendo a busca em grade por usuário a cada uma das 1000 permutações. Roda para a **variante principal** (vocabulário sem funcionais) e o **controle por deck** — ambos têm uma atribuição cartão→rótulo discreta que faz sentido embaralhar, como nos controles do English.apkg. Não roda para: o controle de nó global único (embaralhar uma atribuição uniforme não muda nada — mesmo motivo do English.apkg) nem para a variante de vizinhos por embedding (não é uma atribuição cartão→rótulo discreta; é uma estrutura de grafo k-NN sobre embeddings, sem um análogo direto de "embaralhar" no mesmo sentido). A variante de embedding entra na comparação só via IC95% do bootstrap, conforme o critério de sucesso já define.
+
 ## Restrição
 
 Nenhuma chamada a API de modelo (Anthropic, Google etc.) nesta fase. Embeddings locais (`@huggingface/transformers`, já usado no projeto) são permitidos por não serem uma API externa.
