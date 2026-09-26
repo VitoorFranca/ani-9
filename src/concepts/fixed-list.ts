@@ -59,10 +59,13 @@ export interface FixedListConcept {
   examples: number[];
 }
 
-function buildFixedListPrompt(cards: readonly SampleCard[]): string {
+function buildFixedListPrompt(cards: readonly SampleCard[], options: { includeCountTarget?: boolean } = {}): string {
+  const includeCountTarget = options.includeCountTarget ?? true;
   const cardLines = cards
     .map((c) => `Cartão ${c.cardId} — PERGUNTA: ${c.front} — RESPOSTA: ${c.back}`)
     .join("\n");
+
+  const countTargetLine = includeCountTarget ? "\n- Entre 30 e 80 conceitos." : "";
 
   return `Você está analisando uma amostra de flashcards de um aplicativo de repetição espaçada, sobre qualquer assunto, para construir uma LISTA FIXA e reutilizável de conceitos, usada depois para classificar TODOS os cartões do baralho.
 
@@ -76,8 +79,7 @@ Cada conceito deve ser ATÔMICO: uma única ideia por conceito, sem exemplos ent
 
 Critério de granularidade — use-o para decidir quando DIVIDIR uma categoria ampla: dois conceitos são DIFERENTES se uma pessoa pode saber um sem saber o outro. Categorias amplas ("Phrasal Verbs", "Funções em Python", "Doenças cardiovasculares") quase sempre precisam ser divididas nos padrões específicos que os cartões realmente exigem (ex.: em vez de "Phrasal Verbs" sozinho, "phrasal verb: called off", "phrasal verb: give up", cada um só se aparecer em múltiplos cartões).
 
-Requisitos da lista final:
-- Entre 30 e 80 conceitos.
+Requisitos da lista final:${countTargetLine}
 - Cada conceito deve aparecer em PELO MENOS 3 cartões desta amostra — se você só encontrar 1 ou 2 exemplos, ou é específico demais (não deveria estar na lista) ou você precisa generalizar um pouco o conceito até achar um terceiro exemplo real na amostra.
 - Para cada conceito, cite os IDs de 2 cartões desta amostra que o exigem (campo "examples"), como prova de que ele realmente aparece repetidamente.
 
@@ -136,6 +138,8 @@ function validateFixedListResult(input: unknown, validCardIds: ReadonlySet<numbe
 export interface GenerateFixedListOptions {
   client: MinimalGeminiClient;
   model?: string;
+  /** Whether the prompt asks for a 30-80 concept count target. Defaults to true. */
+  includeCountTarget?: boolean;
 }
 
 export interface GenerateFixedListResult {
@@ -148,7 +152,12 @@ export async function generateFixedList(
   options: GenerateFixedListOptions,
 ): Promise<GenerateFixedListResult> {
   const model = options.model ?? DEFAULT_GEMINI_MODEL;
-  const result = await generateJson(options.client, model, buildFixedListPrompt(sample), buildFixedListSchema());
+  const result = await generateJson(
+    options.client,
+    model,
+    buildFixedListPrompt(sample, { includeCountTarget: options.includeCountTarget ?? true }),
+    buildFixedListSchema(),
+  );
 
   if (!result.text) throw new Error("Empty response from Gemini");
   const validCardIds = new Set(sample.map((c) => c.cardId));

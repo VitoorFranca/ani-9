@@ -79,6 +79,20 @@ describe("generateFixedList", () => {
     await expect(generateFixedList(sample, { client })).rejects.toThrow(/missing 'concepts'/);
   });
 
+  it("includes the 30-80 concept count target in the prompt by default", async () => {
+    const client = mockClient(JSON.stringify({ concepts: [] }));
+    await generateFixedList(sample, { client });
+    const contents = (client.models.generateContent as ReturnType<typeof vi.fn>).mock.calls[0]![0].contents;
+    expect(contents).toMatch(/Entre 30 e 80 conceitos/);
+  });
+
+  it("omits the count target when includeCountTarget is false", async () => {
+    const client = mockClient(JSON.stringify({ concepts: [] }));
+    await generateFixedList(sample, { client, includeCountTarget: false });
+    const contents = (client.models.generateContent as ReturnType<typeof vi.fn>).mock.calls[0]![0].contents;
+    expect(contents).not.toMatch(/Entre 30 e 80 conceitos/);
+  });
+
   it("throws when the response text is empty", async () => {
     const client = mockClient(undefined as unknown as string);
     (client.models.generateContent as ReturnType<typeof vi.fn>).mockResolvedValue({ text: undefined, usageMetadata: {} });
