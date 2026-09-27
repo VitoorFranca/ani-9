@@ -13,6 +13,14 @@ pnpm check
 
 Os testes que baixam o modelo de embeddings são opcionais: `ANI9_RUN_MODEL_TESTS=1 pnpm test`.
 
+## Instalação
+
+Até existir uma publicação no npm, instale o tarball do [release v0.1.0](https://github.com/VitoorFranca/ani-9/releases/tag/v0.1.0):
+
+```bash
+pnpm add https://github.com/VitoorFranca/ani-9/releases/download/v0.1.0/ani-9-core-0.1.0.tgz
+```
+
 Depois de publicada, a biblioteca pode ser importada por `@ani-9/core` ou pelos subcaminhos `/content`, `/model`, `/concepts`, `/fsrs`, `/ingest`, `/embeddings` e `/eval`. Por exemplo:
 
 ```ts
