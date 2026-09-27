@@ -1,6 +1,6 @@
 {
   "name": "@ani-9/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open source ANI-9 flashcard content and research primitives",
   "license": "MIT",
   "type": "module",
@@ -14,7 +14,8 @@
     "./eval": { "types": "./dist/eval/index.d.ts", "default": "./dist/eval/index.js" },
     "./fsrs": { "types": "./dist/fsrs/index.d.ts", "default": "./dist/fsrs/index.js" },
     "./ingest": { "types": "./dist/ingest/index.d.ts", "default": "./dist/ingest/index.js" },
-    "./model": { "types": "./dist/model/index.d.ts", "default": "./dist/model/index.js" }
+    "./model": { "types": "./dist/model/index.d.ts", "default": "./dist/model/index.js" },
+    "./study": { "types": "./dist/study/index.d.ts", "default": "./dist/study/index.js" }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

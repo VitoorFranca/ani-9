@@ -15,10 +15,10 @@ Os testes que baixam o modelo de embeddings são opcionais: `ANI9_RUN_MODEL_TEST
 
 ## Instalação
 
-Até existir uma publicação no npm, instale o tarball do [release v0.1.0](https://github.com/VitoorFranca/ani-9/releases/tag/v0.1.0):
+Até existir uma publicação no npm, instale o tarball do [release v0.2.0](https://github.com/VitoorFranca/ani-9/releases/tag/v0.2.0):
 
 ```bash
-pnpm add https://github.com/VitoorFranca/ani-9/releases/download/v0.1.0/ani-9-core-0.1.0.tgz
+pnpm add https://github.com/VitoorFranca/ani-9/releases/download/v0.2.0/ani-9-core-0.2.0.tgz
 ```
 
 Depois de publicada, a biblioteca pode ser importada por `@ani-9/core` ou pelos subcaminhos `/content`, `/model`, `/concepts`, `/fsrs`, `/ingest`, `/embeddings` e `/eval`. Por exemplo:
@@ -33,5 +33,14 @@ const links = buildCombinedLinks("baralho", [], {
 ```
 
 Os subcaminhos de conceitos, modelos e avaliação incluem APIs experimentais e podem mudar durante a série 0.x. `/ingest` e `/embeddings` requerem dependências nativas ou modelos locais. Não inclua dados pessoais ou baralhos neste repositório.
+
+## Estudo guiado (v0.2.0)
+
+`@ani-9/core/study` expõe funções puras para ordenar cartões a partir de
+relações revisadas, identificar pistas imediatas na sessão e registrar a etapa
+de aprendizagem por cartão. A ordem é explicável; ciclos e cartões ausentes são
+relatados. A regra inicial de retirada de apoio é experimental como decisão de
+produto, não uma melhora de aprendizagem demonstrada. O app deve guardar
+exposições e tentativas brutas e manter a revisão FSRS separada.
 
 Pesquisa e protocolos públicos: [ani-9-benchmark](https://github.com/VitoorFranca/ani-9-benchmark).
