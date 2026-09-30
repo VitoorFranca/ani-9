@@ -1,6 +1,6 @@
 {
   "name": "@ani-9/core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Open source ANI-9 flashcard content and research primitives",
   "license": "MIT",
   "type": "module",
