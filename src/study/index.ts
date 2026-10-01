@@ -18,3 +18,8 @@ export {
   MIN_ANSWER_COVERAGE,
 } from "./suggest.js";
 export type { CandidatePair, PairJudgement, RevealAnswer, BeforeAnswer } from "./suggest.js";
+// Re-exported here so consumers of the study rules never load the concepts
+// module's embedding stack (onnxruntime) just to get these light helpers.
+export { ENGLISH_FUNCTION_WORDS, PORTUGUESE_FUNCTION_WORDS } from "../concepts/vocabulary.js";
+export { generateJson, DEFAULT_GEMINI_MODEL } from "../concepts/gemini-client.js";
+export type { MinimalGeminiClient } from "../concepts/gemini-client.js";

@@ -15,10 +15,10 @@ Os testes que baixam o modelo de embeddings são opcionais: `ANI9_RUN_MODEL_TEST
 
 ## Instalação
 
-Até existir uma publicação no npm, instale o tarball do [release v0.4.0](https://github.com/VitoorFranca/ani-9/releases/tag/v0.4.0):
+Até existir uma publicação no npm, instale o tarball do [release v0.4.1](https://github.com/VitoorFranca/ani-9/releases/tag/v0.4.1):
 
 ```bash
-pnpm add https://github.com/VitoorFranca/ani-9/releases/download/v0.4.0/ani-9-core-0.4.0.tgz
+pnpm add https://github.com/VitoorFranca/ani-9/releases/download/v0.4.1/ani-9-core-0.4.1.tgz
 ```
 
 Depois de publicada, a biblioteca pode ser importada por `@ani-9/core` ou pelos subcaminhos `/content`, `/model`, `/concepts`, `/fsrs`, `/ingest`, `/embeddings` e `/eval`. Por exemplo:
@@ -34,7 +34,7 @@ const links = buildCombinedLinks("baralho", [], {
 
 Os subcaminhos de conceitos, modelos e avaliação incluem APIs experimentais e podem mudar durante a série 0.x. `/ingest` e `/embeddings` requerem dependências nativas ou modelos locais. Não inclua dados pessoais ou baralhos neste repositório.
 
-O subcaminho `/study` (v0.4.0, experimental) contém as regras do estudo
+O subcaminho `/study` (desde v0.4.0, experimental) contém as regras do estudo
 guiado: ordem por relações entre cartões com ciclos sinalizados, classificação
 de respostas dadas logo após uma pista, etapas provisórias de retirada de
 apoio, pares candidatos por BM25 e a conversão da resposta de um modelo de
