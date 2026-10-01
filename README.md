@@ -15,10 +15,10 @@ Os testes que baixam o modelo de embeddings são opcionais: `ANI9_RUN_MODEL_TEST
 
 ## Instalação
 
-Até existir uma publicação no npm, instale o tarball do [release v0.3.1](https://github.com/VitoorFranca/ani-9/releases/tag/v0.3.1):
+Até existir uma publicação no npm, instale o tarball do [release v0.4.0](https://github.com/VitoorFranca/ani-9/releases/tag/v0.4.0):
 
 ```bash
-pnpm add https://github.com/VitoorFranca/ani-9/releases/download/v0.3.1/ani-9-core-0.3.1.tgz
+pnpm add https://github.com/VitoorFranca/ani-9/releases/download/v0.4.0/ani-9-core-0.4.0.tgz
 ```
 
 Depois de publicada, a biblioteca pode ser importada por `@ani-9/core` ou pelos subcaminhos `/content`, `/model`, `/concepts`, `/fsrs`, `/ingest`, `/embeddings` e `/eval`. Por exemplo:
@@ -34,7 +34,15 @@ const links = buildCombinedLinks("baralho", [], {
 
 Os subcaminhos de conceitos, modelos e avaliação incluem APIs experimentais e podem mudar durante a série 0.x. `/ingest` e `/embeddings` requerem dependências nativas ou modelos locais. Não inclua dados pessoais ou baralhos neste repositório.
 
-O subcaminho experimental `/study`, introduzido em v0.2.0, foi removido em
-v0.3.0. Protótipos de organização didática e sua avaliação pertencem ao lab.
+O subcaminho `/study` (v0.4.0, experimental) contém as regras do estudo
+guiado: ordem por relações entre cartões com ciclos sinalizados, classificação
+de respostas dadas logo após uma pista, etapas provisórias de retirada de
+apoio, pares candidatos por BM25 e a conversão da resposta de um modelo de
+linguagem em relações. Foram promovidas depois de um protocolo pré-registrado
+no lab com critérios de versão experimental: cerca de metade das sugestões de
+"estude antes" foi julgada correta, por isso as relações devem ser editáveis
+por quem estuda. **Não há evidência de que essa ordem melhore a aprendizagem**;
+o FSRS não é alterado. A chamada ao modelo fica a cargo de quem usa a
+biblioteca.
 
 Pesquisa e protocolos públicos: [ani-9-benchmark](https://github.com/VitoorFranca/ani-9-benchmark).
